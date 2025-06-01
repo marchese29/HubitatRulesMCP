@@ -1,0 +1,10 @@
+[project]
+name = "hubitatrulesmcp"
+version = "0.1.0"
+description = "MCP Server for maintaining rules and automations of the Hubitat home hub"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastmcp>=2.5.2",
+    "httpx>=0.28.1",
+]
