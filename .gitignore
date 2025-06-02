@@ -12,6 +12,9 @@ wheels/
 # Dotenv file
 .env
 
+# VS Code Things
+.vscode/
+
 # Roo Things
 .roomodes
 .roo/
