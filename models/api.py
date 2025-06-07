@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class HubitatDeviceResponse(BaseModel):
@@ -16,3 +16,11 @@ class HubitatDeviceResponse(BaseModel):
     capabilities: list[str]
     attributes: dict[str, Any] | None = None
     commands: list[dict[str, str]] | None = None
+
+
+class HubitatDeviceEvent(BaseModel):
+    """Represents an event from a Hubitat device."""
+
+    device_id: str = Field(alias="deviceId")
+    attribute: str = Field(alias="name")
+    value: Any | None

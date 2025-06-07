@@ -19,3 +19,7 @@ wheels/
 .roomodes
 .roo/
 memory-bank/
+
+# Cline Things
+.clinerules
+.clineignore

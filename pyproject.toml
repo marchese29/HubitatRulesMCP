@@ -9,3 +9,21 @@ dependencies = [
     "httpx>=0.28.1",
     "pydantic>=2.11.5",
 ]
+
+[dependency-groups]
+test = [
+    "pytest>=8.4.0",
+    "pytest-asyncio>=1.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = "-v --tb=short"
+markers = [
+    "integration: marks tests as integration tests (may make real API calls)",
+    "unit: marks tests as unit tests (no external dependencies)",
+]
