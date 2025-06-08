@@ -2,7 +2,7 @@ import asyncio as aio
 from abc import ABC, abstractmethod
 from collections import deque
 from datetime import timedelta
-from typing import Awaitable, Callable, Self
+from typing import Awaitable, Callable
 
 from hubitat import HubitatClient
 from models.api import HubitatDeviceEvent

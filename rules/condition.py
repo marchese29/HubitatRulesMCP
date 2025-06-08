@@ -1,12 +1,70 @@
+from datetime import timedelta
 from typing import override
 
 from models.api import HubitatDeviceEvent
 from rules.engine import EngineCondition
 
 
-class BooleanCondition(EngineCondition):
-    def __init__(self, *conditions: EngineCondition, operator: str):
-        self._conditions: dict[str, tuple[EngineCondition, bool]] = {}
+class AbstractCondition(EngineCondition):
+    def __bool__(self) -> bool:
+        raise NotImplementedError("Use utils.check(<condition>) to evaluate conditions")
+
+    @property
+    @override
+    def timeout(self) -> timedelta | None:
+        return getattr(self, "_timeout", None)
+
+    @timeout.setter
+    def timeout(self, value: timedelta):
+        setattr(self, "_timeout", value)
+
+    @property
+    @override
+    def duration(self) -> timedelta | None:
+        return getattr(self, "_duration", None)
+
+    @duration.setter
+    def duration(self, value: timedelta):
+        setattr(self, "_duration", value)
+
+
+class AttributeChangeCondition(AbstractCondition):
+    def __init__(self, device_id: int, attr_name: str):
+        self._device_id = device_id
+        self._attr_name = attr_name
+        self._prev_value = None
+        self._curr_value = None
+
+    @property
+    @override
+    def identifier(self) -> str:
+        return f"attribute_change(he_dev({self._device_id}:{self._attr_name}))"
+
+    @property
+    @override
+    def device_ids(self) -> list[int]:
+        return [self._device_id]
+
+    @override
+    def on_device_event(self, event: HubitatDeviceEvent):
+        if event.device_id == self._device_id and event.attribute == self._attr_name:
+            self._prev_value = self._curr_value
+            self._curr_value = event.value
+
+    @override
+    def initialize(self, attrs: dict[int, dict[str, any]], conds: dict[str, bool]):
+        self._prev_value = attrs[self._device_id][self._attr_name]
+        self._curr_value = self._prev_value
+        return False
+
+    @override
+    def evaluate(self):
+        return self._prev_value != self._curr_value
+
+
+class BooleanCondition(AbstractCondition):
+    def __init__(self, *conditions: AbstractCondition, operator: str):
+        self._conditions: dict[str, tuple[AbstractCondition, bool]] = {}
         for condition in conditions:
             self._conditions[condition.identifier] = (condition, False)
         if operator == "not" and len(self._conditions) != 1:
@@ -21,7 +79,7 @@ class BooleanCondition(EngineCondition):
 
     @property
     @override
-    def subconditions(self) -> list[EngineCondition]:
+    def subconditions(self) -> list[AbstractCondition]:
         return [c for (c, _) in self._conditions.values()]
 
     @override
@@ -48,7 +106,7 @@ class BooleanCondition(EngineCondition):
                 raise ValueError(f"Unknown operator: {self._operator}")
 
 
-class DynamicDeviceAttributeCondition(EngineCondition):
+class DynamicDeviceAttributeCondition(AbstractCondition):
     """A condition for the comparison of a device attribute against another one"""
 
     def __init__(self, first: tuple[int, str], operator: str, second: tuple[int, str]):
@@ -111,7 +169,7 @@ class DynamicDeviceAttributeCondition(EngineCondition):
                 raise ValueError(f"Unknown operator: {self._operator}")
 
 
-class StaticDeviceAttributeCondition(EngineCondition):
+class StaticDeviceAttributeCondition(AbstractCondition):
     """A condition for the comparison of a device attribute against a static value"""
 
     def __init__(self, device_id: int, attr_name: str, operator: str, value: any):
