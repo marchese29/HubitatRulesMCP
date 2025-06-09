@@ -1,9 +1,11 @@
+import asyncio
 from contextlib import asynccontextmanager
 from fastmcp import FastMCP, Context
 from starlette.requests import Request
-from starlette.responses import PlainTextResponse
+from starlette.responses import PlainTextResponse, JSONResponse
 
 from hubitat import HubitatClient
+from models.api import HubitatDeviceEvent
 from rules.engine import RuleEngine
 from rules.handler import RuleHandler
 from timing.timers import TimerService
@@ -70,6 +72,67 @@ Available Resources:
 The server integrates with your Hubitat hub to provide powerful, flexible automation capabilities through Python scripting.
 """
     return PlainTextResponse(info)
+
+
+@mcp.custom_route("/he_event", methods=["POST"])
+async def receive_device_event(request: Request, ctx: Context) -> JSONResponse:
+    """Webhook endpoint to receive device events from Hubitat.
+
+    This endpoint receives POST requests from Hubitat with device event data
+    and forwards them to the rule engine for processing by active rules.
+
+    Expected JSON payload:
+    {
+        "deviceId": "123",
+        "name": "switch",
+        "value": "on"
+    }
+    """
+    try:
+        # Parse the JSON payload from Hubitat
+        payload = await request.json()
+
+        # Create a HubitatDeviceEvent from the payload
+        device_event = HubitatDeviceEvent(**payload)
+
+        # Define callback for when processing completes
+        async def _on_processing_complete(task):
+            try:
+                await task  # Wait for the task to complete and check for exceptions
+                await ctx.info(
+                    f"Processed device event: device_id={device_event.device_id}, "
+                    f"attribute={device_event.attribute}, value={device_event.value}"
+                )
+            except Exception as e:
+                await ctx.error(
+                    f"Error processing device event: device_id={device_event.device_id}, "
+                    f"attribute={device_event.attribute}, error={str(e)}"
+                )
+
+        # Start device event processing as fire-and-forget
+        processing_task = asyncio.create_task(rule_engine.on_device_event(device_event))
+
+        # Add callback to log when processing completes
+        processing_task.add_done_callback(
+            lambda task: asyncio.create_task(_on_processing_complete(task))
+        )
+
+        # Return immediately without waiting for processing
+        return JSONResponse(
+            {
+                "success": True,
+                "message": "Device event received and queued for processing",
+                "device_id": device_event.device_id,
+                "attribute": device_event.attribute,
+                "value": device_event.value,
+            }
+        )
+
+    except Exception as e:
+        error_msg = f"Error parsing device event: {str(e)}"
+        await ctx.error(error_msg)
+
+        return JSONResponse({"success": False, "error": error_msg}, status_code=400)
 
 
 @mcp.resource("rulesengine://programming-guide")
