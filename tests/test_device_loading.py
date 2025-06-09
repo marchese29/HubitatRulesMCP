@@ -2,7 +2,6 @@
 
 import pytest
 
-from hubitat import HubitatClient
 from rules.interface import Device
 
 

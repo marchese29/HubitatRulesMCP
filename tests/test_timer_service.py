@@ -3,7 +3,6 @@
 import asyncio
 import time
 from datetime import timedelta
-from typing import List
 import pytest
 
 from timing.timers import TimerService
@@ -136,7 +135,6 @@ class TestTimerService:
             executed_timers.append((timer_id, time.time()))
 
         # Start a timer
-        start_time = time.time()
         await service.start_timer("reset_me", timedelta(seconds=0.3), callback)
 
         # Reset it partway through

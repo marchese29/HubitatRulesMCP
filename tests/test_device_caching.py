@@ -1,9 +1,7 @@
 """Unit tests for device caching functionality."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
 
-from hubitat import HubitatClient, HubitatDevice
 from rules.interface import Device
 
 
