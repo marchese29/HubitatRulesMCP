@@ -4,6 +4,9 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from hubitat import HubitatClient, HubitatDevice
+from rules.engine import RuleEngine
+from tests.mock_timer_service import MockTimerService
+from tests.test_helpers import create_mock_hubitat_client, create_mock_timer_service
 
 
 @pytest.fixture
@@ -35,3 +38,39 @@ def device_64_mock():
         attributes={"door", "contact", "temperature", "battery"},
         commands={"open", "close", "refresh"},
     )
+
+
+# RuleEngine Testing Fixtures
+
+
+@pytest.fixture
+def mock_timer_service():
+    """Create a fresh MockTimerService for each test."""
+    return create_mock_timer_service()
+
+
+@pytest.fixture
+def mock_he_client():
+    """Create a mock HubitatClient that returns empty attributes by default."""
+    return create_mock_hubitat_client()
+
+
+@pytest.fixture
+def rule_engine(mock_he_client, mock_timer_service):
+    """Create a RuleEngine instance with mocked dependencies."""
+    return RuleEngine(mock_he_client, mock_timer_service)
+
+
+@pytest.fixture
+def rule_engine_with_device_attrs(mock_timer_service):
+    """Create a RuleEngine with a client that has predefined device attributes.
+
+    Device 123: {"switch": "off", "contact": "closed"}
+    Device 456: {"switch": "on", "temperature": 72}
+    """
+    device_attrs = {
+        123: {"switch": "off", "contact": "closed"},
+        456: {"switch": "on", "temperature": 72},
+    }
+    client = create_mock_hubitat_client(device_attrs)
+    return RuleEngine(client, mock_timer_service)

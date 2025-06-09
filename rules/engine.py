@@ -129,7 +129,7 @@ class RuleEngine:
     # REACTORS #
     ############
 
-    async def _on_device_event(self, event: HubitatDeviceEvent):
+    async def on_device_event(self, event: HubitatDeviceEvent):
         device_id = int(event.device_id)
 
         # Find all conditions that care about this device
@@ -228,10 +228,10 @@ class RuleEngine:
                 and notifier.condition.duration is not None
             ):
 
-                def _notify_duration():
+                async def _notify_duration():
                     # When the duration timer expires remove the condition, cancel the
                     # timeout timer, and notify the event
-                    self.remove_condition(notifier.condition)
+                    await self.remove_condition(notifier.condition)
                     self._timer_service.cancel_timer(
                         f"condition_timeout({notifier.condition.identifier})"
                     )
@@ -247,7 +247,7 @@ class RuleEngine:
             # When a condition becomes true, cancel the timeout timer if it exists then
             # notify the event
             if curr is True and prev is False:
-                self.remove_condition(notifier.condition)
+                self._remove_condition(notifier.condition)
                 self._timer_service.cancel_timer(
                     f"condition_timeout({notifier.condition.identifier})"
                 )
@@ -286,13 +286,22 @@ class RuleEngine:
                 self._on_condition_timeout(notifier),
             )
 
-        # Start duration timer if condition is already true
-        if state is True and condition.duration is not None:
-            await self._timer_service.start_timer(
-                f"condition_duration({condition.identifier})",
-                condition.duration,
-                lambda _: notifier.notify(),
-            )
+        # Handle conditions that are immediately true
+        if state is True:
+            if condition.duration is not None:
+                # Start duration timer if condition has a duration
+                await self._timer_service.start_timer(
+                    f"condition_duration({condition.identifier})",
+                    condition.duration,
+                    lambda _: notifier.notify(),
+                )
+            else:
+                # Condition is immediately true and has no duration - fire immediately
+                self._timer_service.cancel_timer(
+                    f"condition_timeout({condition.identifier})"
+                )
+                self._remove_condition(condition)
+                notifier.notify()
 
     def _remove_condition(self, condition: EngineCondition):
         # Cancel timeout timer if it exists
