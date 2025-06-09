@@ -48,8 +48,61 @@ mcp = FastMCP(name="Hubitat Rules", lifespan=lifespan)
 
 
 @mcp.custom_route("/", methods=["GET"])
-async def hello_world(request: Request) -> PlainTextResponse:
-    return PlainTextResponse("Hello, World!")
+async def server_info(request: Request) -> PlainTextResponse:
+    info = """Hubitat Rules MCP Server
+
+This Model Context Protocol (MCP) server provides automation rule management for Hubitat home automation systems.
+
+Features:
+• Install and manage condition-based automation rules
+• Install and manage scheduled automation rules  
+• Real-time device state monitoring and triggers
+• Timer-based scheduling with cron support
+• Python-based rule programming with full API access
+
+Available Tools:
+• install_rule - Create new automation rules (condition or scheduled)
+• uninstall_rule - Remove existing automation rules
+
+Available Resources:
+• rulesengine://programming-guide - Comprehensive rule programming documentation
+
+The server integrates with your Hubitat hub to provide powerful, flexible automation capabilities through Python scripting.
+"""
+    return PlainTextResponse(info)
+
+
+@mcp.resource("rulesengine://programming-guide")
+async def get_programming_guide() -> str:
+    """Comprehensive programming guide for writing Hubitat automation rules.
+
+    This resource provides detailed documentation on:
+    - Rule architecture and concepts (condition-based vs scheduled rules)
+    - Programming patterns and best practices
+    - Complete API reference with examples
+    - Device interaction patterns
+    - Timing and condition handling
+    - Common use cases and troubleshooting
+
+    Essential context for LLMs to understand how to write effective
+    Python automation rules using this Hubitat Rules MCP server.
+    """
+    import os
+
+    try:
+        # Get the directory where main.py is located
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        guide_path = os.path.join(script_dir, "hubitat_rules_programming_guide.md")
+
+        with open(guide_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return (
+            "Programming guide not found. Please ensure hubitat_rules_programming_guide.md exists "
+            "in the same directory as main.py."
+        )
+    except Exception as e:
+        return f"Error loading programming guide: {str(e)}"
 
 
 @mcp.tool()
