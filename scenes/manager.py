@@ -8,7 +8,6 @@ from models.api import (
     DeviceStateRequirement,
     CommandResult,
     SceneSetResponse,
-    HubitatDeviceEvent,
 )
 
 
@@ -60,17 +59,29 @@ class SceneManager:
 
         # Convert to SceneWithStatus objects
         scenes_with_status = []
-        for scene in scenes_to_return:
-            is_set = await self.is_scene_set(scene)
-            scene_with_status = SceneWithStatus(
-                name=scene.name,
-                description=scene.description,
-                device_states=scene.device_states,
-                created_at=scene.created_at,
-                updated_at=scene.updated_at,
-                is_set=is_set,
-            )
-            scenes_with_status.append(scene_with_status)
+
+        if scenes_to_return:
+            # Collect all unique device IDs across all scenes
+            all_device_ids = set()
+            for scene in scenes_to_return:
+                for req in scene.device_states:
+                    all_device_ids.add(req.device_id)
+
+            # Batch fetch device states in parallel
+            device_states = await self._batch_fetch_device_states(all_device_ids)
+
+            # Check each scene using pre-fetched states
+            for scene in scenes_to_return:
+                is_set = self._is_scene_set_with_states(scene, device_states)
+                scene_with_status = SceneWithStatus(
+                    name=scene.name,
+                    description=scene.description,
+                    device_states=scene.device_states,
+                    created_at=scene.created_at,
+                    updated_at=scene.updated_at,
+                    is_set=is_set,
+                )
+                scenes_with_status.append(scene_with_status)
 
         return scenes_with_status
 
@@ -139,30 +150,67 @@ class SceneManager:
             failed_commands=failed_commands,
         )
 
-    async def is_scene_set(self, scene: Scene) -> bool:
-        """Check if all device states in scene match current values."""
+    def _is_scene_set_with_states(
+        self, scene: Scene, device_states: dict[int, dict[str, any]]
+    ) -> bool:
+        """Internal method to check if scene is set using pre-fetched device states.
+
+        Args:
+            scene: The scene to check
+            device_states: Dict mapping device_id to dict of attribute name->value
+
+        Returns:
+            True if all device states in scene match the provided values
+        """
         for req in scene.device_states:
-            current_attrs = await self.he_client.get_all_attributes(req.device_id)
+            current_attrs = device_states.get(req.device_id, {})
             if current_attrs.get(req.attribute) != req.value:
                 return False
         return True
 
-    # Event Integration
-    async def on_device_event(self, event: HubitatDeviceEvent) -> list[str]:
-        """Check all scenes involving this device and return newly set ones."""
-        device_id = int(event.device_id)
-        newly_set_scenes = []
+    async def is_scene_set(self, scene: Scene) -> bool:
+        """Check if all device states in scene match current values."""
+        # Collect unique device IDs needed for this scene
+        device_ids = {req.device_id for req in scene.device_states}
 
-        # Only check scenes that involve this device
-        if device_id in self._device_to_scenes:
-            for scene_name in self._device_to_scenes[device_id]:
-                scene = self._scenes[scene_name]
-                if await self.is_scene_set(scene):
-                    newly_set_scenes.append(scene_name)
+        # Batch fetch device states in parallel
+        device_states = await self._batch_fetch_device_states(device_ids)
 
-        return newly_set_scenes
+        # Use internal method with fetched states
+        return self._is_scene_set_with_states(scene, device_states)
 
     # Internal Methods
+    async def _batch_fetch_device_states(
+        self, device_ids: set[int]
+    ) -> dict[int, dict[str, any]]:
+        """Fetch device states for multiple devices in parallel.
+
+        Args:
+            device_ids: Set of device IDs to fetch states for
+
+        Returns:
+            Dict mapping device_id to dict of attribute name->value
+        """
+        if not device_ids:
+            return {}
+
+        # Create tasks for parallel fetching
+        tasks = []
+        device_id_list = list(device_ids)
+        for device_id in device_id_list:
+            task = asyncio.create_task(self.he_client.get_all_attributes(device_id))
+            tasks.append(task)
+
+        # Execute all fetches in parallel
+        results = await asyncio.gather(*tasks)
+
+        # Build result dictionary
+        device_states = {}
+        for device_id, attrs in zip(device_id_list, results):
+            device_states[device_id] = attrs
+
+        return device_states
+
     async def _send_command_safe(self, req: DeviceStateRequirement):
         """Send command and let exceptions bubble up for failure tracking."""
         arguments = req.arguments if req.arguments else None
