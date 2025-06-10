@@ -141,7 +141,10 @@ class SceneManager:
         if success:
             message = f"Scene '{name}' applied successfully ({total_commands} commands)"
         else:
-            message = f"Scene '{name}' applied with {len(failed_commands)} failures out of {total_commands} commands"
+            message = (
+                f"Scene '{name}' applied with {len(failed_commands)} failures out of "
+                f"{total_commands} commands"
+            )
 
         return SceneSetResponse(
             success=success,
