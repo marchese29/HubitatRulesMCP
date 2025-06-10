@@ -5,10 +5,17 @@ from starlette.requests import Request
 from starlette.responses import PlainTextResponse, JSONResponse
 
 from hubitat import HubitatClient
-from models.api import HubitatDeviceEvent
+from models.api import (
+    HubitatDeviceEvent,
+    Scene,
+    DeviceStateRequirement,
+    SceneSetResponse,
+    SceneWithStatus,
+)
 from rules.engine import RuleEngine
 from rules.handler import RuleHandler
 from timing.timers import TimerService
+from scenes.manager import SceneManager
 
 
 # Common Resources
@@ -16,6 +23,7 @@ he_client = HubitatClient()
 timer_service = TimerService()
 rule_engine = RuleEngine(he_client, timer_service)
 rule_handler = RuleHandler(rule_engine, he_client)
+scene_manager = SceneManager(he_client)
 
 
 @asynccontextmanager
@@ -53,11 +61,12 @@ mcp = FastMCP(name="Hubitat Rules", lifespan=lifespan)
 async def server_info(request: Request) -> PlainTextResponse:
     info = """Hubitat Rules MCP Server
 
-This Model Context Protocol (MCP) server provides automation rule management for Hubitat home automation systems.
+This Model Context Protocol (MCP) server provides automation rule management and scene control for Hubitat home automation systems.
 
 Features:
 • Install and manage condition-based automation rules
 • Install and manage scheduled automation rules  
+• Create and manage device scenes with state requirements
 • Real-time device state monitoring and triggers
 • Timer-based scheduling with cron support
 • Python-based rule programming with full API access
@@ -65,11 +74,15 @@ Features:
 Available Tools:
 • install_rule - Create new automation rules (condition or scheduled)
 • uninstall_rule - Remove existing automation rules
+• get_scenes - List scenes with optional filtering and current status
+• create_scene - Create new scenes with device state requirements
+• delete_scene - Remove scenes and get their definitions
+• set_scene - Apply scenes by sending commands to devices
 
 Available Resources:
 • rulesengine://programming-guide - Comprehensive rule programming documentation
 
-The server integrates with your Hubitat hub to provide powerful, flexible automation capabilities through Python scripting.
+The server integrates with your Hubitat hub to provide powerful, flexible automation capabilities through Python scripting and scene management.
 """
     return PlainTextResponse(info)
 
@@ -260,6 +273,129 @@ async def uninstall_rule(name: str, ctx: Context) -> dict:
         error_msg = f"Unexpected error uninstalling rule '{name}': {str(e)}"
         await ctx.error(error_msg)
         return {"success": False, "message": error_msg, "rule_name": name}
+
+
+@mcp.tool()
+async def get_scenes(
+    ctx: Context,
+    name: str | None = None,
+    device_id: int | None = None,
+) -> list[SceneWithStatus]:
+    """Get scenes with optional filtering. Includes current set status.
+
+    Args:
+        name: Get specific scene by name
+        device_id: Get all scenes that involve this device
+
+    Returns:
+        List of scenes with current status
+    """
+    try:
+        return await scene_manager.get_scenes(name=name, device_id=device_id)
+    except Exception as e:
+        await ctx.error(f"Error getting scenes: {str(e)}")
+        return []
+
+
+@mcp.tool()
+async def create_scene(
+    name: str,
+    device_states: list[DeviceStateRequirement],
+    ctx: Context,
+    description: str | None = None,
+) -> SceneWithStatus:
+    """Create a new scene with explicit device states and commands.
+
+    Args:
+        name: Unique name for the scene
+        description: Optional description of the scene
+        device_states: List of device state requirements with format:
+                      [{"device_id": 123, "attribute": "switch", "value": "on", "command": "on", "arguments": []}]
+
+    Returns:
+        The created scene
+    """
+    try:
+        from datetime import datetime
+
+        scene = Scene(
+            name=name,
+            description=description,
+            device_states=device_states,
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+        )
+
+        created_scene = await scene_manager.create_scene(scene)
+
+        # Convert to SceneWithStatus with current status
+        is_set = await scene_manager.is_scene_set(created_scene)
+        scene_with_status = SceneWithStatus(
+            name=created_scene.name,
+            description=created_scene.description,
+            device_states=created_scene.device_states,
+            created_at=created_scene.created_at,
+            updated_at=created_scene.updated_at,
+            is_set=is_set,
+        )
+
+        await ctx.info(
+            f"Created scene '{name}' with {len(device_states)} device states"
+        )
+        return scene_with_status
+
+    except Exception as e:
+        error_msg = f"Error creating scene '{name}': {str(e)}"
+        await ctx.error(error_msg)
+        raise RuntimeError(error_msg)
+
+
+@mcp.tool()
+async def delete_scene(name: str, ctx: Context) -> Scene:
+    """Delete a scene and return its definition.
+
+    Args:
+        name: Name of the scene to delete
+
+    Returns:
+        The deleted scene information
+    """
+    try:
+        deleted_scene = await scene_manager.delete_scene(name)
+        await ctx.info(f"Deleted scene '{name}'")
+        return deleted_scene
+    except Exception as e:
+        error_msg = f"Error deleting scene '{name}': {str(e)}"
+        await ctx.error(error_msg)
+        raise RuntimeError(error_msg)
+
+
+@mcp.tool()
+async def set_scene(name: str, ctx: Context) -> SceneSetResponse:
+    """Apply a scene by sending commands to devices.
+
+    Args:
+        name: Name of the scene to apply
+
+    Returns:
+        Result of scene application with any failed commands
+    """
+    try:
+        response = await scene_manager.set_scene(name)
+
+        # Log results
+        if response.success:
+            await ctx.info(f"Scene '{name}' applied successfully")
+        else:
+            await ctx.warning(
+                f"Scene '{name}' applied with {len(response.failed_commands)} failures"
+            )
+
+        return response
+    except Exception as e:
+        error_msg = f"Error setting scene '{name}': {str(e)}"
+        await ctx.error(error_msg)
+        raise RuntimeError(error_msg)
 
 
 if __name__ == "__main__":

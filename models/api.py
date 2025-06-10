@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -24,3 +25,53 @@ class HubitatDeviceEvent(BaseModel):
     device_id: str = Field(alias="deviceId")
     attribute: str = Field(alias="name")
     value: Any | None
+
+
+# Scene Models
+class DeviceStateRequirement(BaseModel):
+    """Defines both desired state and how to achieve it"""
+
+    device_id: int
+    attribute: str
+    value: Any
+    command: str
+    arguments: list[Any] = []
+
+
+class Scene(BaseModel):
+    """Complete scene definition"""
+
+    name: str
+    description: str | None = None
+    device_states: list[DeviceStateRequirement]
+    created_at: datetime
+    updated_at: datetime
+
+
+class SceneWithStatus(BaseModel):
+    """Scene information including current set status"""
+
+    name: str
+    description: str | None = None
+    device_states: list[DeviceStateRequirement]
+    created_at: datetime
+    updated_at: datetime
+    is_set: bool
+
+
+class CommandResult(BaseModel):
+    """Result of a failed command"""
+
+    device_id: int
+    command: str
+    arguments: list[Any] = []
+    error: str
+
+
+class SceneSetResponse(BaseModel):
+    """Response for set_scene operation - only includes failures"""
+
+    success: bool
+    scene_name: str
+    message: str
+    failed_commands: list[CommandResult]  # Only failed commands
