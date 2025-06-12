@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from typing import Awaitable, Callable
 
 from hubitat import HubitatClient
+from models.database import DBRule
 from rules.condition import AbstractCondition
 from rules.engine import RuleEngine
 from rules.interface import RuleUtilities
@@ -20,10 +21,10 @@ class RuleHandler:
         self._he_client = he_client
         self._active_rules: dict[str, aio.Task] = {}
 
-    async def install_rule(self, name: str, trigger_provider_code: str, rule_code: str):
+    async def install_rule(self, rule: DBRule):
         """Installs a rule that runs on a given trigger."""
-        if name in self._active_rules:
-            raise ValueError(f"Rule '{name}' already exists. Uninstall it first.")
+        if rule.name in self._active_rules:
+            raise ValueError(f"Rule '{rule.name}' already exists. Uninstall it first.")
 
         # TODO: Implement proper sandboxing/security for code execution
         # For now, execute directly in global namespace - THIS IS NOT SECURE
@@ -34,7 +35,7 @@ class RuleHandler:
 
             # Execute and validate trigger provider
             trigger_function = self._execute_and_validate_trigger_provider(
-                trigger_provider_code, namespace
+                rule.trigger_code, namespace
             )
 
             # Get the trigger condition by calling the function
@@ -45,24 +46,24 @@ class RuleHandler:
                 )
 
             # Execute and validate rule action
-            rule_function = self._execute_and_validate_rule_action(rule_code, namespace)
+            rule_function = self._execute_and_validate_rule_action(
+                rule.action_code, namespace
+            )
 
             # Start the rule task
             task = aio.create_task(
                 self._run_rule_on_condition(trigger_condition, rule_function),
-                name=f"rule:{name}",
+                name=f"rule:{rule.name}",
             )
-            self._active_rules[name] = task
+            self._active_rules[rule.name] = task
 
         except Exception as e:
-            raise RuntimeError(f"Failed to install rule '{name}': {e}") from e
+            raise RuntimeError(f"Failed to install rule '{rule.name}': {e}") from e
 
-    async def install_scheduled_rule(
-        self, name: str, timer_provider_code: str, rule_code: str
-    ):
+    async def install_scheduled_rule(self, rule: DBRule):
         """Installs a rule that runs on a scheduled timer."""
-        if name in self._active_rules:
-            raise ValueError(f"Rule '{name}' already exists. Uninstall it first.")
+        if rule.name in self._active_rules:
+            raise ValueError(f"Rule '{rule.name}' already exists. Uninstall it first.")
 
         # TODO: Implement proper sandboxing/security for code execution
         # For now, execute directly in global namespace - THIS IS NOT SECURE
@@ -73,29 +74,33 @@ class RuleHandler:
 
             # Execute and validate timer provider
             timer_function = self._execute_and_validate_timer_provider(
-                timer_provider_code, namespace
+                rule.time_provider, namespace
             )
 
             # Execute and validate rule action
-            rule_function = self._execute_and_validate_rule_action(rule_code, namespace)
+            rule_function = self._execute_and_validate_rule_action(
+                rule.action_code, namespace
+            )
 
             # Start the scheduled rule task
             task = aio.create_task(
                 self._run_scheduled_rule(timer_function, rule_function),
-                name=f"scheduled_rule:{name}",
+                name=f"scheduled_rule:{rule.name}",
             )
-            self._active_rules[name] = task
+            self._active_rules[rule.name] = task
 
         except Exception as e:
-            raise RuntimeError(f"Failed to install scheduled rule '{name}': {e}") from e
+            raise RuntimeError(
+                f"Failed to install scheduled rule '{rule.name}': {e}"
+            ) from e
 
-    async def uninstall_rule(self, rule_name: str):
+    async def uninstall_rule(self, rule: DBRule):
         """Uninstall a rule"""
-        if rule_name not in self._active_rules:
-            raise ValueError(f"Rule '{rule_name}' does not exist")
+        if rule.name not in self._active_rules:
+            raise ValueError(f"Rule '{rule.name}' does not exist")
 
         # Cancel the rule task
-        task = self._active_rules[rule_name]
+        task = self._active_rules[rule.name]
         task.cancel()
 
         try:
@@ -104,7 +109,7 @@ class RuleHandler:
             pass  # Expected when cancelling
 
         # Remove from active rules
-        del self._active_rules[rule_name]
+        del self._active_rules[rule.name]
 
     def get_active_rules(self) -> list[str]:
         """Get list of currently active rule names."""

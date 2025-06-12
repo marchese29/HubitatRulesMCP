@@ -1,10 +1,13 @@
 import asyncio
 from contextlib import asynccontextmanager
+
 from fastmcp import FastMCP, Context
+from sqlmodel import SQLModel, Session, create_engine, select
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse, JSONResponse
 
 from hubitat import HubitatClient
+from logic.rule_logic import RuleLogic
 from models.api import (
     HubitatDeviceEvent,
     Scene,
@@ -12,6 +15,7 @@ from models.api import (
     SceneSetResponse,
     SceneWithStatus,
 )
+from models.database import DBRule
 from rules.engine import RuleEngine
 from rules.handler import RuleHandler
 from timing.timers import TimerService
@@ -23,16 +27,33 @@ he_client = HubitatClient()
 timer_service = TimerService()
 rule_engine = RuleEngine(he_client, timer_service)
 rule_handler = RuleHandler(rule_engine, he_client)
+rule_logic = RuleLogic(rule_handler)
 scene_manager = SceneManager(he_client)
 
 
 @asynccontextmanager
-async def lifespan(app):
+async def lifespan(fastmcp: FastMCP):
     """Handle startup and shutdown for the MCP server"""
-    # Startup code - runs when server starts
     print("Hubitat Rules MCP server starting up...")
+
+    print("Initiating TimerService")
     timer_service.start()
-    print("Timer service started")
+    print("TimerService started")
+
+    # Load existing rules from the database
+    print("Re-installing rules from the database")
+    count = 0
+    with Session(fastmcp.db_engine) as session:
+        for rule in session.exec(select(DBRule)):
+            count += 1
+            if rule.time_provider is not None:
+                print(f"Installing scheduled rule '{rule.name}'")
+                rule_handler.install_scheduled_rule(rule)
+            else:
+                print(f"Installing triggered rule '{rule.name}'")
+                rule_handler.install_rule(rule)
+    if count > 0:
+        print("Re-installed {count} rules from the database")
 
     yield  # Server runs here
 
@@ -42,6 +63,8 @@ async def lifespan(app):
         # Cancel all active rules first
         for rule_name in rule_handler.get_active_rules():
             try:
+                # Note, this leaves the rule in the database so it can be loaded again on
+                # startup
                 await rule_handler.uninstall_rule(rule_name)
                 print(f"Uninstalled rule: {rule_name}")
             except Exception as e:
@@ -55,6 +78,8 @@ async def lifespan(app):
 
 
 mcp = FastMCP(name="Hubitat Rules", lifespan=lifespan)
+mcp.db_engine = create_engine("sqlite:///rulesdb.db", echo=True)
+SQLModel.metadata.create_all(mcp.db_engine)
 
 
 @mcp.custom_route("/", methods=["GET"])
@@ -213,20 +238,18 @@ async def install_rule(
 
         # Install the appropriate rule type
         if rule_type == "condition":
-            await rule_handler.install_rule(name, trigger_code, action_code)
+            rule = await rule_logic.install_trigger_rule(
+                name, trigger_code, action_code
+            )
         else:  # scheduled
-            await rule_handler.install_scheduled_rule(name, trigger_code, action_code)
-
-        active_rules = rule_handler.get_active_rules()
-        await ctx.info(
-            f"Successfully installed rule '{name}'. Active rules: {len(active_rules)}"
-        )
+            rule = await rule_logic.install_timer_rule(
+                name, time_provider=trigger_code, action_code=action_code
+            )
 
         return {
             "success": True,
             "message": f"Rule '{name}' installed successfully",
-            "rule_name": name,
-            "active_rules": active_rules,
+            "rule": rule,
         }
 
     except ValueError as e:
@@ -252,17 +275,12 @@ async def uninstall_rule(name: str, ctx: Context) -> dict:
     await ctx.info(f"Uninstalling rule '{name}'")
 
     try:
-        await rule_handler.uninstall_rule(name)
-        active_rules = rule_handler.get_active_rules()
-        await ctx.info(
-            f"Successfully uninstalled rule '{name}'. Active rules: {len(active_rules)}"
-        )
+        rule = await rule_logic.uninstall_rule(name)
 
         return {
             "success": True,
             "message": f"Rule '{name}' uninstalled successfully",
-            "rule_name": name,
-            "active_rules": active_rules,
+            "rule": rule,
         }
 
     except ValueError as e:
