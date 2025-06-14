@@ -193,6 +193,23 @@ async def rule_action(utils):
     await device.set_color_temperature(3000)
 ```
 
+**Scene Control:**
+```python
+async def rule_action(utils):
+    # Get scene by name
+    evening_scene = utils.scene("evening_lights")
+    
+    # Check if scene is currently active
+    if not await evening_scene.is_set:
+        # Apply the scene
+        response = await evening_scene.enable()
+        
+        if response.success:
+            print("Scene applied successfully")
+        else:
+            print(f"Scene failed: {response.message}")
+```
+
 **Timing and Delays:**
 ```python
 async def rule_action(utils):

@@ -26,9 +26,9 @@ from scenes.manager import SceneManager
 he_client = HubitatClient()
 timer_service = TimerService()
 rule_engine = RuleEngine(he_client, timer_service)
-rule_handler = RuleHandler(rule_engine, he_client)
-rule_logic = RuleLogic(rule_handler)
 scene_manager = SceneManager(he_client)
+rule_handler = RuleHandler(rule_engine, he_client, scene_manager)
+rule_logic = RuleLogic(rule_handler)
 
 
 @asynccontextmanager

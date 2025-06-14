@@ -5,12 +5,16 @@ from typing import Self
 from hubitat import HubitatClient
 from rules.condition import (
     AbstractCondition,
+    AlwaysFalseCondition,
     AttributeChangeCondition,
     BooleanCondition,
     DynamicDeviceAttributeCondition,
+    SceneChangeCondition,
     StaticDeviceAttributeCondition,
 )
 from rules.engine import RuleEngine
+from scenes.manager import SceneManager
+from models.api import SceneSetResponse
 
 
 class Attribute:
@@ -120,16 +124,105 @@ class Device:
             )
 
 
+class Scene:
+    """A Hubitat scene."""
+
+    def __init__(self, scene_name: str, scene_manager: SceneManager):
+        self._scene_name = scene_name
+        self._scene_manager = scene_manager
+
+    @property
+    async def is_set(self) -> bool:
+        """Check if this scene is currently active.
+
+        Returns:
+            True if all device states in the scene match current values
+        """
+        scenes = await self._scene_manager.get_scenes(name=self._scene_name)
+        if not scenes:
+            raise ValueError(f"Scene '{self._scene_name}' not found")
+        return scenes[0].is_set
+
+    async def enable(self) -> SceneSetResponse:
+        """Apply/activate this scene.
+
+        Returns:
+            SceneSetResponse with success status and any failed commands
+        """
+        return await self._scene_manager.set_scene(self._scene_name)
+
+    async def on_set(self) -> AbstractCondition:
+        """Return a condition that triggers when this scene becomes set.
+
+        Returns:
+            AbstractCondition that is true when all scene device states match
+        """
+        try:
+            scenes = await self._scene_manager.get_scenes(name=self._scene_name)
+            if not scenes:
+                # Return a condition that's never true for missing scenes
+                return AlwaysFalseCondition(f"scene_missing:{self._scene_name}")
+
+            # Convert each device requirement to a condition
+            device_conditions = []
+            for req in scenes[0].device_states:
+                condition = StaticDeviceAttributeCondition(
+                    req.device_id, req.attribute, "=", req.value
+                )
+                device_conditions.append(condition)
+
+            if not device_conditions:
+                # Empty scene - return a condition that's always false
+                return AlwaysFalseCondition(f"scene_empty:{self._scene_name}")
+
+            # Scene is set when ALL conditions are true
+            return BooleanCondition(*device_conditions, operator="and")
+
+        except Exception as e:
+            # Any error - return a condition that's never true
+            return AlwaysFalseCondition(f"scene_error:{self._scene_name}:{str(e)}")
+
+    async def on_change(self) -> AbstractCondition:
+        """Return a condition that triggers when this scene state changes.
+
+        Returns:
+            AbstractCondition that triggers on any scene state change (set ↔ not set)
+        """
+        try:
+            # Get the base scene condition (same as on_set)
+            scene_condition = await self.on_set()
+
+            # If the scene condition is AlwaysFalse, just return it directly
+            if isinstance(scene_condition, AlwaysFalseCondition):
+                return scene_condition
+
+            # Wrap in change detection
+            return SceneChangeCondition(self._scene_name, scene_condition)
+
+        except Exception as e:
+            # Any error - return a condition that's never true
+            return AlwaysFalseCondition(
+                f"scene_change_error:{self._scene_name}:{str(e)}"
+            )
+
+
 class RuleUtilities:
     """Utilities for building rules."""
 
-    def __init__(self, engine: RuleEngine, he_client: HubitatClient):
+    def __init__(
+        self, engine: RuleEngine, he_client: HubitatClient, scene_manager: SceneManager
+    ):
         self._engine = engine
         self._he_client = he_client
+        self._scene_manager = scene_manager
 
     def device(self, device_id: int) -> Device:
         """Get a device by its id."""
         return Device(device_id, self._he_client)
+
+    def scene(self, scene_name: str) -> Scene:
+        """Get a scene by its name."""
+        return Scene(scene_name, self._scene_manager)
 
     def all_of(self, *conditions: AbstractCondition) -> AbstractCondition:
         """Condition that checks if all subconditions are true."""

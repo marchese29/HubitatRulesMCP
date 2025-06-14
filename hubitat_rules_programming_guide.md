@@ -169,6 +169,40 @@ async def get_trigger_condition(utils):
     return utils.on_change(device.temperature)
 ```
 
+### Scene Trigger Patterns
+
+**Scene Becomes Set:**
+```python
+async def get_trigger_condition(utils):
+    scene = utils.scene("evening_lights")
+    
+    # Trigger when scene becomes active (all device states match)
+    return await scene.on_set()
+```
+
+**Scene State Changes:**
+```python
+async def get_trigger_condition(utils):
+    scene = utils.scene("morning_routine")
+    
+    # Trigger on any scene state change (set ↔ not set)
+    return await scene.on_change()
+```
+
+**Complex Scene Logic:**
+```python
+async def get_trigger_condition(utils):
+    evening_scene = utils.scene("evening_lights")
+    motion = utils.device(123)
+    await motion.load()
+    
+    # Trigger when evening scene becomes set AND motion detected
+    return utils.all_of(
+        await evening_scene.on_set(),
+        motion.motion == "active"
+    )
+```
+
 ## Scheduled Rules
 
 ### Timer Code Structure
@@ -278,6 +312,56 @@ async def rule_action(utils):
         device = utils.device(device_id)
         await device.load()
         await device.on()
+```
+
+### Scene Control Patterns
+
+**Basic Scene Operations:**
+```python
+async def rule_action(utils):
+    scene = utils.scene("evening_lights")
+    
+    # Check if scene is currently active
+    if not await scene.is_set:
+        # Apply the scene
+        response = await scene.enable()
+        
+        if response.success:
+            print(f"Scene applied successfully")
+        else:
+            print(f"Scene failed with {len(response.failed_commands)} errors")
+```
+
+**Conditional Scene Management:**
+```python
+async def rule_action(utils):
+    # Check current scene status before acting
+    morning_scene = utils.scene("morning_routine")
+    evening_scene = utils.scene("evening_lights")
+    
+    if await morning_scene.is_set:
+        # Switch from morning to evening
+        await evening_scene.enable()
+    elif not await evening_scene.is_set:
+        # No scene active, enable evening
+        await evening_scene.enable()
+```
+
+**Scene-Based Automation:**
+```python
+async def rule_action(utils):
+    from datetime import datetime
+    now = datetime.now()
+    
+    if 6 <= now.hour < 12:
+        scene = utils.scene("morning_routine")
+    elif 12 <= now.hour < 18:
+        scene = utils.scene("day_lights")
+    else:
+        scene = utils.scene("evening_lights")
+    
+    if not await scene.is_set:
+        await scene.enable()
 ```
 
 ### Timing Operations
@@ -407,6 +491,9 @@ async def rule_action(utils):
 **Device Access:**
 - `device(device_id: int) -> Device` - Get device interface
 
+**Scene Access:**
+- `scene(scene_name: str) -> Scene` - Get scene interface
+
 **Condition Builders:**
 - `all_of(*conditions) -> AbstractCondition` - AND logic
 - `any_of(*conditions) -> AbstractCondition` - OR logic
@@ -446,6 +533,25 @@ Device attributes and commands are determined by Hubitat device capabilities. Th
 **Comparisons (return AbstractCondition):**
 - `== value`, `!= value` - Equality/inequality
 - `> value`, `>= value`, `< value`, `<= value` - Numeric comparisons
+
+### Scene Interface
+
+**Scene Status:**
+- `is_set -> bool` - Check if scene is currently active (async property)
+
+**Scene Control:**
+- `enable() -> SceneSetResponse` - Apply/activate the scene
+
+**Usage Pattern:**
+```python
+scene = utils.scene("scene_name")
+if not await scene.is_set:
+    response = await scene.enable()
+    if response.success:
+        print("Scene applied successfully")
+    else:
+        print(f"Scene failed: {response.message}")
+```
 
 ## Example: Complete Motion Light Rule
 

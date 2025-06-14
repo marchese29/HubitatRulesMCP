@@ -8,6 +8,7 @@ from models.database import DBRule
 from rules.condition import AbstractCondition
 from rules.engine import RuleEngine
 from rules.interface import RuleUtilities
+from scenes.manager import SceneManager
 
 
 RuleTriggerProvider = Callable[[RuleUtilities], Awaitable[AbstractCondition]]
@@ -16,9 +17,15 @@ TimerProvider = Callable[[], Awaitable[datetime]]
 
 
 class RuleHandler:
-    def __init__(self, rule_engine: RuleEngine, he_client: HubitatClient):
+    def __init__(
+        self,
+        rule_engine: RuleEngine,
+        he_client: HubitatClient,
+        scene_manager: SceneManager,
+    ):
         self._rule_engine = rule_engine
         self._he_client = he_client
+        self._scene_manager = scene_manager
         self._active_rules: dict[str, aio.Task] = {}
 
     async def install_rule(self, rule: DBRule):
@@ -117,7 +124,7 @@ class RuleHandler:
 
     def _create_execution_namespace(self) -> dict:
         """Create namespace for code execution with common utilities."""
-        utils = RuleUtilities(self._rule_engine, self._he_client)
+        utils = RuleUtilities(self._rule_engine, self._he_client, self._scene_manager)
         return {
             "utils": utils,
             "timedelta": timedelta,
@@ -198,7 +205,11 @@ class RuleHandler:
 
                 try:
                     # Run the rule
-                    await action(RuleUtilities(self._rule_engine, self._he_client))
+                    await action(
+                        RuleUtilities(
+                            self._rule_engine, self._he_client, self._scene_manager
+                        )
+                    )
                 except Exception as e:
                     # Log rule execution error but continue monitoring
                     print(f"Error executing rule: {e}")
@@ -226,4 +237,6 @@ class RuleHandler:
             # Wait until the trigger time then run the rule
             wait = next_trigger - datetime.now()
             await aio.sleep(wait.total_seconds())
-            await action(RuleUtilities(self._rule_engine, self._he_client))
+            await action(
+                RuleUtilities(self._rule_engine, self._he_client, self._scene_manager)
+            )

@@ -250,3 +250,85 @@ class StaticDeviceAttributeCondition(AbstractCondition):
                 return self._device_value <= self._value
             case _:
                 raise ValueError(f"Unknown operator: {self._operator}")
+
+
+class AlwaysFalseCondition(AbstractCondition):
+    """A condition that is always false. Used for error cases."""
+
+    def __init__(self, reason: str = "always_false"):
+        self._reason = reason
+
+    @property
+    @override
+    def identifier(self) -> str:
+        return f"always_false({self._reason})"
+
+    @property
+    @override
+    def device_ids(self) -> list[int]:
+        return []  # No devices to monitor
+
+    @override
+    def on_device_event(self, event: HubitatDeviceEvent):
+        pass  # Never changes state
+
+    @override
+    def initialize(self, attrs: dict[int, dict[str, any]], conds: dict[str, bool]):
+        return False  # Always false
+
+    @override
+    def evaluate(self) -> bool:
+        return False  # Always false
+
+
+class SceneChangeCondition(AbstractCondition):
+    """A condition that triggers when a scene state changes (set ↔ not set)."""
+
+    def __init__(self, scene_name: str, scene_condition: AbstractCondition):
+        self._scene_name = scene_name
+        self._scene_condition = scene_condition
+        self._prev_state = False
+        self._curr_state = False
+
+    @property
+    @override
+    def identifier(self) -> str:
+        return f"scene_change({self._scene_name})"
+
+    @property
+    @override
+    def device_ids(self) -> list[int]:
+        # Delegate to the wrapped scene condition
+        return self._scene_condition.device_ids
+
+    @property
+    @override
+    def subconditions(self) -> list[AbstractCondition]:
+        return [self._scene_condition]
+
+    @override
+    def on_device_event(self, event: HubitatDeviceEvent):
+        # Let the wrapped condition handle the event
+        self._scene_condition.on_device_event(event)
+
+    @override
+    def initialize(self, attrs: dict[int, dict[str, any]], conds: dict[str, bool]):
+        # Initialize the wrapped condition and get its initial state
+        scene_state = self._scene_condition.initialize(attrs, conds)
+        self._prev_state = scene_state
+        self._curr_state = scene_state
+        return False  # Never start as true for change detection
+
+    @override
+    def evaluate(self) -> bool:
+        # Evaluate the wrapped scene condition
+        new_state = self._scene_condition.evaluate()
+
+        # Check for state change
+        result = self._curr_state != new_state
+
+        # Update state
+        self._prev_state = self._curr_state
+        self._curr_state = new_state
+
+        return result
