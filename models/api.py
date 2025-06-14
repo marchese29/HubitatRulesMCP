@@ -75,3 +75,14 @@ class SceneSetResponse(BaseModel):
     scene_name: str
     message: str
     failed_commands: list[CommandResult]  # Only failed commands
+
+
+# Rule Models
+class RuleInfo(BaseModel):
+    """Information about an automation rule"""
+
+    name: str
+    rule_type: str  # "condition" or "scheduled"
+    trigger_code: str
+    action_code: str
+    is_active: bool

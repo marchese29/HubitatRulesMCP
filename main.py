@@ -14,6 +14,7 @@ from models.api import (
     DeviceStateRequirement,
     SceneSetResponse,
     SceneWithStatus,
+    RuleInfo,
 )
 from models.database import DBRule
 from rules.engine import RuleEngine
@@ -99,6 +100,7 @@ Features:
 Available Tools:
 • install_rule - Create new automation rules (condition or scheduled)
 • uninstall_rule - Remove existing automation rules
+• get_rules - List rules with optional filtering and current status
 • get_scenes - List scenes with optional filtering and current status
 • create_scene - Create new scenes with device state requirements
 • delete_scene - Remove scenes and get their definitions
@@ -291,6 +293,28 @@ async def uninstall_rule(name: str, ctx: Context) -> dict:
         error_msg = f"Unexpected error uninstalling rule '{name}': {str(e)}"
         await ctx.error(error_msg)
         return {"success": False, "message": error_msg, "rule_name": name}
+
+
+@mcp.tool()
+async def get_rules(
+    ctx: Context,
+    name: str | None = None,
+    rule_type: str | None = None,
+) -> list[RuleInfo]:
+    """Get rules with optional filtering.
+
+    Args:
+        name: Get specific rule by name
+        rule_type: Filter by "condition" or "scheduled"
+
+    Returns:
+        List of rules with current status
+    """
+    try:
+        return await rule_logic.get_rules(name=name, rule_type=rule_type)
+    except Exception as e:
+        await ctx.error(f"Error getting rules: {str(e)}")
+        return []
 
 
 @mcp.tool()
