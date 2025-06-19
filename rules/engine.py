@@ -270,9 +270,7 @@ class RuleEngine:
         init_cond_states = await self._initialize_sub_conditions(condition)
 
         # Fetch all attributes for all devices this condition cares about
-        init_attrs: dict[int, dict[str, any]] = {}
-        for device_id in condition.device_ids:
-            init_attrs[device_id] = await self._he_client.get_all_attributes(device_id)
+        init_attrs = await self._he_client.get_bulk_attributes(condition.device_ids)
 
         # Initialize the condition
         state = condition.initialize(init_attrs, init_cond_states)

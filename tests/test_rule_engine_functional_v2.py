@@ -7,19 +7,16 @@ auto-removal behavior.
 """
 
 import asyncio
-import pytest
-from unittest.mock import MagicMock
 from datetime import timedelta
 
-from rules.engine import RuleEngine
+import pytest
+
 
 from .test_conditions import (
+    AlwaysFalseCondition,
+    AlwaysTrueCondition,
     SimpleCondition,
     TimeoutCondition,
-    DurationCondition,
-    ParentCondition,
-    AlwaysTrueCondition,
-    AlwaysFalseCondition,
 )
 from .test_helpers import create_device_event
 
@@ -198,11 +195,12 @@ class TestConditionLifecycle:
 
         # Set up device state in mock - device 789 has switch=on initially
         device_attrs = {"switch": "on", "level": 25}
+        bulk_attrs = {789: device_attrs}
 
         # Configure async mock properly
         from unittest.mock import AsyncMock
 
-        mock_he_client.get_all_attributes = AsyncMock(return_value=device_attrs)
+        mock_he_client.get_bulk_attributes = AsyncMock(return_value=bulk_attrs)
 
         # Create condition that should be true with current device state
         condition = SimpleCondition(
@@ -213,8 +211,8 @@ class TestConditionLifecycle:
         # Add condition - this should fetch initial state and immediately fire
         await engine.add_condition(condition, condition_event)
 
-        # Verify device state was fetched
-        mock_he_client.get_all_attributes.assert_called_once_with(789)
+        # Verify device state was fetched using bulk method
+        mock_he_client.get_bulk_attributes.assert_called_once_with([789])
 
         # Condition should have immediately fired and auto-removed
         fired = await asyncio.wait_for(condition_event.wait(), timeout=0.1)

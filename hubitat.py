@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 from pydantic import BaseModel
@@ -11,12 +11,17 @@ class HubitatDevice(BaseModel):
     name: str
     attributes: set[str]
     commands: set[str]
+    current_attributes: dict[str, Any] = {}
 
     def has_attribute(self, attr: str) -> bool:
         return attr in self.attributes
 
     def has_command(self, command: str) -> bool:
         return command in self.commands
+
+    def get_attribute_value(self, attr: str) -> Any:
+        """Get the current value of an attribute."""
+        return self.current_attributes.get(attr)
 
 
 class HubitatClient:
@@ -50,7 +55,7 @@ class HubitatClient:
         return resp
 
     async def send_command(
-        self, device_id: int, command: str, arguments: Optional[list[any]] = None
+        self, device_id: int, command: str, arguments: Optional[list[Any]] = None
     ):
         """Send a command with optional arguments to a device.
 
@@ -95,7 +100,7 @@ class HubitatClient:
             commands=commands,
         )
 
-    async def get_all_attributes(self, device_id: int) -> dict[str, any]:
+    async def get_all_attributes(self, device_id: int) -> dict[str, Any]:
         """Get all current attribute values for a device.
 
         Args:
@@ -112,3 +117,68 @@ class HubitatClient:
         for attr_data in data.get("attributes", []):
             attributes[attr_data["name"]] = attr_data["currentValue"]
         return attributes
+
+    async def get_all_devices(self) -> list[HubitatDevice]:
+        """Get all devices with their attributes and current values.
+
+        Returns:
+            List of HubitatDevice objects with current attribute values
+        """
+        url = f"{self._address}/devices/all"
+        resp = await self._make_request(url)
+        data = resp.json()
+
+        # Convert to list of HubitatDevice objects
+        devices = []
+        for device_data in data:
+            # Extract attribute names as strings
+            attributes = set()
+            current_attributes = {}
+            for attr_data in device_data.get("attributes", []):
+                attr_name = attr_data["name"]
+                attributes.add(attr_name)
+                current_attributes[attr_name] = attr_data["currentValue"]
+
+            # Convert commands to a set of strings
+            commands = set(device_data.get("commands", []))
+
+            # Create HubitatDevice object
+            device = HubitatDevice(
+                id=int(device_data["id"]),
+                name=device_data["name"],
+                attributes=attributes,
+                commands=commands,
+                current_attributes=current_attributes,
+            )
+            devices.append(device)
+
+        return devices
+
+    async def get_bulk_attributes(
+        self, device_ids: list[int]
+    ) -> dict[int, dict[str, Any]]:
+        """Get current attribute values for multiple devices efficiently.
+
+        Args:
+            device_ids: List of device IDs to retrieve attributes for
+        Returns:
+            Dict mapping device_id to dict of attribute name -> current value
+        """
+        if not device_ids:
+            return {}
+
+        # Get all devices data
+        all_devices = await self.get_all_devices()
+        devices_by_id = {device.id: device for device in all_devices}
+
+        # Extract attributes for requested devices
+        result = {}
+        for device_id in device_ids:
+            if device_id in devices_by_id:
+                device = devices_by_id[device_id]
+                result[device_id] = device.current_attributes
+            else:
+                # Device not found in bulk data, fallback to individual call
+                result[device_id] = await self.get_all_attributes(device_id)
+
+        return result
