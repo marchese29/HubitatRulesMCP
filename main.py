@@ -12,6 +12,7 @@ from audit.decorators import log_audit_event
 from audit.service import AuditService
 from hubitat import HubitatClient
 from logic.rule_logic import RuleLogic
+from logic.scene_logic import SceneLogic
 from models.api import (
     DeviceStateRequirement,
     HubitatDeviceEvent,
@@ -34,6 +35,7 @@ rule_engine = RuleEngine(he_client, timer_service)
 scene_manager = SceneManager(he_client)
 rule_handler = RuleHandler(rule_engine, he_client, scene_manager)
 rule_logic = RuleLogic(rule_handler)
+scene_logic = SceneLogic(scene_manager)
 
 
 @asynccontextmanager
@@ -53,6 +55,7 @@ async def lifespan(fastmcp: FastMCP):
 
     # Load existing rules from the database
     print("Re-installing rules from the database")
+    # TODO: Move this logic into the rule_logic file
     count = 0
     with Session(fastmcp.db_engine) as session:  # type: ignore[attr-defined]
         for rule in session.exec(select(DBRule)):
@@ -77,6 +80,14 @@ async def lifespan(fastmcp: FastMCP):
             )
     if count > 0:
         print(f"Re-installed {count} rules from the database")
+
+    # Load existing scenes from the database
+    print("Re-installing scenes from the database")
+    scene_count = 0
+    with Session(fastmcp.db_engine) as session:  # type: ignore[attr-defined]
+        scene_count = await scene_logic.load_scenes_from_database(session)
+    if scene_count > 0:
+        print(f"Re-installed {scene_count} scenes from the database")
 
     yield  # Server runs here
 
@@ -395,18 +406,15 @@ async def create_scene(
             updated_at=datetime.now(),
         )
 
-        created_scene = await scene_manager.create_scene(name, scene)
+        # Use scene_logic to ensure persistence
+        await scene_logic.create_scene(name, scene)
 
-        # Convert to SceneWithStatus with current status
-        is_set = await scene_manager.is_scene_set(created_scene)
-        scene_with_status = SceneWithStatus(
-            name=created_scene.name,
-            description=created_scene.description,
-            device_states=created_scene.device_states,
-            created_at=created_scene.created_at,
-            updated_at=created_scene.updated_at,
-            is_set=is_set,
-        )
+        # Get the created scene with current status
+        scenes_with_status = await scene_manager.get_scenes(name=name)
+        if not scenes_with_status:
+            raise RuntimeError(f"Scene '{name}' was created but could not be retrieved")
+
+        scene_with_status = scenes_with_status[0]
 
         await ctx.info(
             f"Created scene '{name}' with {len(device_states)} device states"
@@ -430,9 +438,18 @@ async def delete_scene(name: str, ctx: Context) -> Scene:
         The deleted scene information
     """
     try:
-        deleted_scene = await scene_manager.delete_scene(name)
+        # Get the scene data before deletion
+        scenes = await scene_logic.get_scenes(name=name)
+        if not scenes:
+            raise ValueError(f"Scene '{name}' not found")
+
+        scene_to_delete = scenes[0]
+
+        # Use scene_logic to ensure persistence
+        await scene_logic.delete_scene(name)
+
         await ctx.info(f"Deleted scene '{name}'")
-        return deleted_scene
+        return scene_to_delete
     except Exception as e:
         error_msg = f"Error deleting scene '{name}': {str(e)}"
         await ctx.error(error_msg)
