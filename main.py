@@ -2,10 +2,12 @@ import asyncio
 from contextlib import asynccontextmanager
 import time
 
+from fastapi import FastAPI
 from fastmcp import Context, FastMCP
 from sqlmodel import Session, SQLModel, create_engine, select
 from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse
+import uvicorn
 
 from audit import service as audit_service_module
 from audit.decorators import log_audit_event
@@ -38,98 +40,10 @@ rule_logic = RuleLogic(rule_handler)
 scene_logic = SceneLogic(scene_manager)
 
 
-@asynccontextmanager
-async def lifespan(fastmcp: FastMCP):
-    """Handle startup and shutdown for the MCP server"""
-    print("Hubitat Rules MCP server starting up...")
-
-    # Initialize and start audit service
-    print("Starting audit service...")
-    audit_service_module.audit_service = AuditService(fastmcp.db_engine)  # type: ignore[attr-defined]
-    audit_service_module.audit_service.start()
-    print("Audit service started")
-
-    print("Initiating TimerService")
-    timer_service.start()
-    print("TimerService started")
-
-    # Load existing rules from the database
-    print("Re-installing rules from the database")
-    # TODO: Move this logic into the rule_logic file
-    count = 0
-    with Session(fastmcp.db_engine) as session:  # type: ignore[attr-defined]
-        for rule in session.exec(select(DBRule)):
-            count += 1
-            start_time = time.time()
-
-            if rule.time_provider is not None:
-                print(f"Installing scheduled rule '{rule.name}'")
-                await rule_handler.install_scheduled_rule(rule, rule.name)
-            else:
-                print(f"Installing triggered rule '{rule.name}'")
-                await rule_handler.install_rule(rule, rule.name)
-
-            # Log rule loading to audit with timing
-            execution_time = (time.time() - start_time) * 1000
-            await log_audit_event(
-                EventType.RULE_LIFECYCLE,
-                EventSubtype.RULE_LOADED,
-                rule_name=rule.name,
-                execution_time_ms=execution_time,
-                success=True,
-            )
-    if count > 0:
-        print(f"Re-installed {count} rules from the database")
-
-    # Load existing scenes from the database
-    print("Re-installing scenes from the database")
-    scene_count = 0
-    with Session(fastmcp.db_engine) as session:  # type: ignore[attr-defined]
-        scene_count = await scene_logic.load_scenes_from_database(session)
-    if scene_count > 0:
-        print(f"Re-installed {scene_count} scenes from the database")
-
-    yield  # Server runs here
-
-    # Shutdown code - runs when server stops
-    print("Hubitat Rules MCP server shutting down...")
-    try:
-        # Cancel all active rules first
-        for rule_name in rule_handler.get_active_rules():
-            try:
-                # Note, this leaves the rule in the database so it can be loaded again on
-                # startup
-                # We need to get the DBRule object from the database first
-                with Session(fastmcp.db_engine) as session:  # type: ignore[attr-defined]
-                    db_rule: DBRule | None = session.exec(
-                        select(DBRule).where(DBRule.name == rule_name)
-                    ).first()
-                    if db_rule:
-                        await rule_handler.uninstall_rule(db_rule, rule_name)
-                        print(f"Uninstalled rule: {rule_name}")
-                    else:
-                        print(f"Rule {rule_name} not found in database during shutdown")
-            except Exception as e:
-                print(f"Error uninstalling rule {rule_name}: {e}")
-
-        # Stop the timer service
-        await timer_service.stop()
-        print("Timer service stopped")
-
-        # Stop the audit service
-        if audit_service_module.audit_service:
-            await audit_service_module.audit_service.stop()
-            print("Audit service stopped")
-    except Exception as e:
-        print(f"Error during shutdown: {e}")
+web_app = FastAPI()
 
 
-mcp = FastMCP(name="Hubitat Rules", lifespan=lifespan)
-mcp.db_engine = create_engine("sqlite:///rulesdb.db", echo=True)  # type: ignore[attr-defined]
-SQLModel.metadata.create_all(mcp.db_engine)  # type: ignore[attr-defined]
-
-
-@mcp.custom_route("/", methods=["GET"])
+@web_app.get("/")
 async def server_info(request: Request) -> PlainTextResponse:
     info = """Hubitat Rules MCP Server
 
@@ -160,7 +74,7 @@ The server integrates with your Hubitat hub to provide powerful, flexible automa
     return PlainTextResponse(info)
 
 
-@mcp.custom_route("/he_event", methods=["POST"])
+@web_app.post("/he_event")
 async def receive_device_event(request: Request, ctx: Context) -> JSONResponse:
     """Webhook endpoint to receive device events from Hubitat.
 
@@ -219,6 +133,105 @@ async def receive_device_event(request: Request, ctx: Context) -> JSONResponse:
         await ctx.error(error_msg)
 
         return JSONResponse({"success": False, "error": error_msg}, status_code=400)
+
+
+@asynccontextmanager
+async def lifespan(fastmcp: FastMCP):
+    """Handle startup and shutdown for the MCP server"""
+    print("Hubitat Rules MCP server starting up...")
+
+    # Initialize and start audit service
+    print("Starting audit service...")
+    audit_service_module.audit_service = AuditService(fastmcp.db_engine)  # type: ignore[attr-defined]
+    audit_service_module.audit_service.start()
+    print("Audit service started")
+
+    print("Initiating TimerService")
+    timer_service.start()
+    print("TimerService started")
+
+    # Load existing rules from the database
+    print("Re-installing rules from the database")
+    # TODO: Move this logic into the rule_logic file
+    count = 0
+    with Session(fastmcp.db_engine) as session:  # type: ignore[attr-defined]
+        for rule in session.exec(select(DBRule)):
+            count += 1
+            start_time = time.time()
+
+            if rule.time_provider is not None:
+                print(f"Installing scheduled rule '{rule.name}'")
+                await rule_handler.install_scheduled_rule(rule, rule.name)
+            else:
+                print(f"Installing triggered rule '{rule.name}'")
+                await rule_handler.install_rule(rule, rule.name)
+
+            # Log rule loading to audit with timing
+            execution_time = (time.time() - start_time) * 1000
+            await log_audit_event(
+                EventType.RULE_LIFECYCLE,
+                EventSubtype.RULE_LOADED,
+                rule_name=rule.name,
+                execution_time_ms=execution_time,
+                success=True,
+            )
+    if count > 0:
+        print(f"Re-installed {count} rules from the database")
+
+    # Load existing scenes from the database
+    print("Re-installing scenes from the database")
+    scene_count = 0
+    with Session(fastmcp.db_engine) as session:  # type: ignore[attr-defined]
+        scene_count = await scene_logic.load_scenes_from_database(session)
+    if scene_count > 0:
+        print(f"Re-installed {scene_count} scenes from the database")
+
+    # Launch the web server
+    config = uvicorn.Config("main:web_app", host="0.0.0.0", port=8080)
+    server = uvicorn.Server(config)
+    web_app_task = asyncio.create_task(server.serve())
+
+    yield  # Server runs here
+
+    # Shutdown code - runs when server stops
+    print("Hubitat Rules MCP server shutting down...")
+    try:
+        web_app_task.cancel()
+        await web_app_task
+
+        # Cancel all active rules first
+        for rule_name in rule_handler.get_active_rules():
+            try:
+                # Note, this leaves the rule in the database so it can be loaded again on
+                # startup
+                # We need to get the DBRule object from the database first
+                with Session(fastmcp.db_engine) as session:  # type: ignore[attr-defined]
+                    db_rule: DBRule | None = session.exec(
+                        select(DBRule).where(DBRule.name == rule_name)
+                    ).first()
+                    if db_rule:
+                        await rule_handler.uninstall_rule(db_rule, rule_name)
+                        print(f"Uninstalled rule: {rule_name}")
+                    else:
+                        print(f"Rule {rule_name} not found in database during shutdown")
+            except Exception as e:
+                print(f"Error uninstalling rule {rule_name}: {e}")
+
+        # Stop the timer service
+        await timer_service.stop()
+        print("Timer service stopped")
+
+        # Stop the audit service
+        if audit_service_module.audit_service:
+            await audit_service_module.audit_service.stop()
+            print("Audit service stopped")
+    except Exception as e:
+        print(f"Error during shutdown: {e}")
+
+
+mcp = FastMCP(name="Hubitat Rules", lifespan=lifespan)
+mcp.db_engine = create_engine("sqlite:///rulesdb.db")  # type: ignore[attr-defined]
+SQLModel.metadata.create_all(mcp.db_engine)  # type: ignore[attr-defined]
 
 
 @mcp.resource("rulesengine://programming-guide")

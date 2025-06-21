@@ -5,7 +5,7 @@
 - [x] Type Checking
 - [x] Comprehensive audit logging for rule execution and scenes
 - [x] Scene storage in the database
-- [ ] Switch to stdio transport with single event endpoint
+- [x] Switch to stdio transport with single event endpoint
 - [ ] Flag-enabled audit tooling
 - [ ] Overhaul testing approach to properly separate unit tests (mocking all immediate dependencies) and functional tests (actually check that full results work end-to-end)
 - [ ] Proper sandboxing of rule execution environment
