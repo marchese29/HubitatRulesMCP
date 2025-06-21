@@ -52,14 +52,16 @@ class AttributeChangeCondition(AbstractCondition):
             self._curr_value = event.value
 
     @override
-    def initialize(self, attrs: dict[int, dict[str, Any]], conds: dict[str, bool]):
+    def initialize(
+        self, attrs: dict[int, dict[str, Any]], conds: dict[str, bool]
+    ) -> bool:
         self._prev_value = attrs[self._device_id][self._attr_name]
         self._curr_value = self._prev_value
         return False
 
     @override
-    def evaluate(self):
-        return self._prev_value != self._curr_value
+    def evaluate(self) -> bool:
+        return bool(self._prev_value != self._curr_value)
 
 
 class BooleanCondition(AbstractCondition):
@@ -113,8 +115,8 @@ class DynamicDeviceAttributeCondition(AbstractCondition):
         self._left_device_id, self._left_attr_name = first
         self._right_device_id, self._right_attr_name = second
         self._operator = operator
-        self._left_value = None
-        self._right_value = None
+        self._left_value: Any | None = None
+        self._right_value: Any | None = None
 
     @override
     @property
@@ -154,29 +156,29 @@ class DynamicDeviceAttributeCondition(AbstractCondition):
     def evaluate(self) -> bool:
         match self._operator:
             case "=":
-                return self._left_value == self._right_value
+                return bool(self._left_value == self._right_value)
             case "!=":
-                return self._left_value != self._right_value
+                return bool(self._left_value != self._right_value)
             case ">":
                 # Handle None values - ordering comparisons with None are undefined
-                if self._left_value is None or self._right_value is None:
-                    return False
-                return self._left_value > self._right_value
+                if self._left_value is not None and self._right_value is not None:
+                    return bool(self._left_value > self._right_value)
+                return False
             case ">=":
                 # Handle None values - ordering comparisons with None are undefined
-                if self._left_value is None or self._right_value is None:
-                    return False
-                return self._left_value >= self._right_value
+                if self._left_value is not None and self._right_value is not None:
+                    return bool(self._left_value >= self._right_value)
+                return False
             case "<":
                 # Handle None values - ordering comparisons with None are undefined
-                if self._left_value is None or self._right_value is None:
-                    return False
-                return self._left_value < self._right_value
+                if self._left_value is not None and self._right_value is not None:
+                    return bool(self._left_value < self._right_value)
+                return False
             case "<=":
                 # Handle None values - ordering comparisons with None are undefined
-                if self._left_value is None or self._right_value is None:
-                    return False
-                return self._left_value <= self._right_value
+                if self._left_value is not None and self._right_value is not None:
+                    return bool(self._left_value <= self._right_value)
+                return False
             case _:
                 raise ValueError(f"Unknown operator: {self._operator}")
 
@@ -249,17 +251,17 @@ class StaticDeviceAttributeCondition(AbstractCondition):
     def evaluate(self) -> bool:
         match self._operator:
             case "=":
-                return self._device_value == self._value
+                return bool(self._device_value == self._value)
             case "!=":
-                return self._device_value != self._value
+                return bool(self._device_value != self._value)
             case ">":
-                return self._device_value > self._value
+                return bool(self._device_value > self._value)
             case ">=":
-                return self._device_value >= self._value
+                return bool(self._device_value >= self._value)
             case "<":
-                return self._device_value < self._value
+                return bool(self._device_value < self._value)
             case "<=":
-                return self._device_value <= self._value
+                return bool(self._device_value <= self._value)
             case _:
                 raise ValueError(f"Unknown operator: {self._operator}")
 
@@ -285,7 +287,9 @@ class AlwaysFalseCondition(AbstractCondition):
         pass  # Never changes state
 
     @override
-    def initialize(self, attrs: dict[int, dict[str, Any]], conds: dict[str, bool]):
+    def initialize(
+        self, attrs: dict[int, dict[str, Any]], conds: dict[str, bool]
+    ) -> bool:
         return False  # Always false
 
     @override
@@ -324,7 +328,9 @@ class SceneChangeCondition(AbstractCondition):
         self._scene_condition.on_device_event(event)
 
     @override
-    def initialize(self, attrs: dict[int, dict[str, Any]], conds: dict[str, bool]):
+    def initialize(
+        self, attrs: dict[int, dict[str, Any]], conds: dict[str, bool]
+    ) -> bool:
         # Initialize the wrapped condition and get its initial state
         scene_state = self._scene_condition.initialize(attrs, conds)
         self._prev_state = scene_state

@@ -130,7 +130,7 @@ class Scene:
 
     def __init__(self, scene_name: str, scene_manager: SceneManager):
         self._scene_name = scene_name
-        self._scene_manager = scene_manager
+        self._scene_manager: SceneManager = scene_manager
 
     @property
     async def is_set(self) -> bool:
@@ -150,7 +150,8 @@ class Scene:
         Returns:
             SceneSetResponse with success status and any failed commands
         """
-        return await self._scene_manager.set_scene(self._scene_name)
+        result: SceneSetResponse = await self._scene_manager.set_scene(self._scene_name)
+        return result
 
     async def on_set(self) -> AbstractCondition:
         """Return a condition that triggers when this scene becomes set.

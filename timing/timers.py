@@ -28,12 +28,12 @@ class Timer:
 class TimerService:
     """Manages multiple timers with unique IDs, durations, and callbacks."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._timers: dict[str, Timer] = {}
         self._queue: Queue[TimerRequest] = Queue()
         self._processor_task: Task | None = None
 
-    def start(self):
+    def start(self) -> None:
         """Start the timer service and its background processor.
 
         Returns:
@@ -66,7 +66,7 @@ class TimerService:
         if request.id in self._timers:
             self.cancel_timer(request.id)
 
-        async def timer_task():
+        async def timer_task() -> None:
             try:
                 await aio.sleep(request.duration.total_seconds())
                 await request.callback(request.id)

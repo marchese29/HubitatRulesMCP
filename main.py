@@ -64,10 +64,10 @@ async def lifespan(fastmcp: FastMCP):
 
             if rule.time_provider is not None:
                 print(f"Installing scheduled rule '{rule.name}'")
-                rule_handler.install_scheduled_rule(rule)
+                await rule_handler.install_scheduled_rule(rule, rule.name)
             else:
                 print(f"Installing triggered rule '{rule.name}'")
-                rule_handler.install_rule(rule)
+                await rule_handler.install_rule(rule, rule.name)
 
             # Log rule loading to audit with timing
             execution_time = (time.time() - start_time) * 1000
@@ -99,8 +99,16 @@ async def lifespan(fastmcp: FastMCP):
             try:
                 # Note, this leaves the rule in the database so it can be loaded again on
                 # startup
-                await rule_handler.uninstall_rule(rule_name)
-                print(f"Uninstalled rule: {rule_name}")
+                # We need to get the DBRule object from the database first
+                with Session(fastmcp.db_engine) as session:  # type: ignore[attr-defined]
+                    db_rule: DBRule | None = session.exec(
+                        select(DBRule).where(DBRule.name == rule_name)
+                    ).first()
+                    if db_rule:
+                        await rule_handler.uninstall_rule(db_rule, rule_name)
+                        print(f"Uninstalled rule: {rule_name}")
+                    else:
+                        print(f"Rule {rule_name} not found in database during shutdown")
             except Exception as e:
                 print(f"Error uninstalling rule {rule_name}: {e}")
 

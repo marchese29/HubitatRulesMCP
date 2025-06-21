@@ -10,7 +10,7 @@ class MockTimerService:
     Allows instant triggering of timers without waiting for real time to pass.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.active_timers: dict[str, Callable[[str], Awaitable[None]]] = {}
         self.cancelled_timers: set[str] = set()
         self.timer_durations: dict[str, timedelta] = {}
@@ -20,7 +20,7 @@ class MockTimerService:
         timer_id: str,
         duration: timedelta,
         callback: Callable[[str], Awaitable[None]],
-    ):
+    ) -> None:
         """Store timer but don't actually wait for duration.
 
         Args:
@@ -33,7 +33,7 @@ class MockTimerService:
         # Remove from cancelled set if it was previously cancelled
         self.cancelled_timers.discard(timer_id)
 
-    def cancel_timer(self, timer_id: str):
+    def cancel_timer(self, timer_id: str) -> None:
         """Cancel a timer if it exists.
 
         Args:
@@ -45,7 +45,7 @@ class MockTimerService:
                 del self.timer_durations[timer_id]
         self.cancelled_timers.add(timer_id)
 
-    async def trigger_timer(self, timer_id: str):
+    async def trigger_timer(self, timer_id: str) -> None:
         """Manually fire a timer for testing.
 
         Args:
@@ -105,7 +105,7 @@ class MockTimerService:
         """Get number of active timers."""
         return len(self.active_timers)
 
-    def clear_all(self):
+    def clear_all(self) -> None:
         """Clear all timers and state (useful between tests)."""
         self.active_timers.clear()
         self.cancelled_timers.clear()

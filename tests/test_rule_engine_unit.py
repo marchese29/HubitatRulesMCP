@@ -3,7 +3,7 @@
 These tests focus on testing individual methods in isolation using mocks.
 """
 
-from unittest.mock import MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -212,13 +212,12 @@ class TestPropagateStateUpdate:
         rule_engine._condition_deps["child"] = {"parent"}
 
         # Mock parent's on_condition_event method
-        parent.on_condition_event = MagicMock()
+        with patch.object(parent, "on_condition_event") as mock_on_event:
+            # Propagate child state update
+            touched = await rule_engine._propagate_state_update([child_notifier])
 
-        # Propagate child state update
-        touched = await rule_engine._propagate_state_update([child_notifier])
-
-        # Verify parent was notified of child state change
-        parent.on_condition_event.assert_called_once_with(child, True)
+            # Verify parent was notified of child state change
+            mock_on_event.assert_called_once_with(child, True)
 
         # Verify both conditions were touched
         touched_ids = {notifier.condition.identifier for notifier in touched}

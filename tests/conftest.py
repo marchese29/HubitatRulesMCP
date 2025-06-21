@@ -1,5 +1,6 @@
 """Pytest configuration and shared fixtures."""
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -71,7 +72,7 @@ def rule_engine_with_device_attrs(mock_timer_service):
     Device 123: {"switch": "off", "contact": "closed"}
     Device 456: {"switch": "on", "temperature": 72}
     """
-    device_attrs = {
+    device_attrs: dict[int, dict[str, Any]] = {
         123: {"switch": "off", "contact": "closed"},
         456: {"switch": "on", "temperature": 72},
     }

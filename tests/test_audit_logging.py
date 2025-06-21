@@ -75,6 +75,7 @@ class TestAuditService:
             assert len(logs) == 1
 
             log = logs[0]
+            assert log is not None
             assert log.event_type == EventType.RULE_LIFECYCLE
             assert log.event_subtype == EventSubtype.RULE_CREATED
             assert log.rule_name == "test_rule"
@@ -102,6 +103,7 @@ class TestAuditService:
 
         with Session(db_engine) as session:
             log = session.exec(select(AuditLog)).first()
+            assert log is not None
             assert log.event_type == EventType.DEVICE_CONTROL
             assert log.event_subtype == EventSubtype.DEVICE_COMMAND
             assert log.rule_name == "device_rule"
@@ -146,7 +148,7 @@ class TestAuditDecorators:
             assert log.rule_name == "test_rule"
             assert log.success is True
             assert log.error_message is None
-            assert log.execution_time_ms > 0
+            assert log.execution_time_ms is not None and log.execution_time_ms > 0
 
     async def test_audit_decorator_logs_failure(self, audit_service, db_engine):
         """Test that the audit scope decorator logs failed operations"""
@@ -176,8 +178,11 @@ class TestAuditDecorators:
             assert log.event_subtype == EventSubtype.SCENE_DELETED
             assert log.scene_name == "test_scene"
             assert log.success is False
-            assert "Failed to delete test_scene" in log.error_message
-            assert log.execution_time_ms > 0
+            assert (
+                log.error_message is not None
+                and "Failed to delete test_scene" in log.error_message
+            )
+            assert log.execution_time_ms is not None and log.execution_time_ms > 0
 
 
 class TestRuleLogicAuditIntegration:
@@ -411,16 +416,17 @@ class TestHubitatClientAuditIntegration:
 
         client = HubitatClient()
         # Mock the _make_request method to avoid actual HTTP calls
-        client._make_request = AsyncMock()
+        with patch.object(
+            client, "_make_request", new_callable=AsyncMock
+        ) as mock_request:
+            # Send a command
+            await client.send_command(123, "on", [])
 
-        # Send a command
-        await client.send_command(123, "on", [])
+            # Verify the HTTP request was called
+            mock_request.assert_called_once()
 
-        # Verify the HTTP request was called
-        client._make_request.assert_called_once()
-
-        # Wait a moment for the async writer to process
-        await asyncio.sleep(0.1)
+            # Wait a moment for the async writer to process
+            await asyncio.sleep(0.1)
 
         # Verify audit log was created
         with Session(db_engine) as session:
@@ -450,7 +456,7 @@ class TestAuditServiceLifecycle:
         assert service._started
 
         # Log an event to verify it's working
-        await service.log_event(
+        await service.log_event(  # type: ignore[unreachable]
             EventType.RULE_LIFECYCLE, EventSubtype.RULE_CREATED, rule_name="test"
         )
 
@@ -582,7 +588,7 @@ class TestRuleLifecycleAuditIntegration:
             assert log.event_subtype == EventSubtype.RULE_LOADED
             assert log.rule_name == "test_rule"
             assert log.success is True
-            assert log.execution_time_ms > 0
+            assert log.execution_time_ms is not None and log.execution_time_ms > 0
 
     async def test_rule_execution_context_inheritance(self, audit_service, db_engine):
         """Test that rule execution context is inherited by device operations"""
@@ -646,6 +652,7 @@ class TestRuleLifecycleAuditIntegration:
             # success=True is passed as kwargs, so it goes into context_data
             import json
 
+            assert rule_complete.context_data is not None
             context_data = json.loads(rule_complete.context_data)
             assert context_data["success"] is True
 
@@ -744,7 +751,9 @@ class TestRuleLifecycleAuditIntegration:
             assert end_log.event_subtype == EventSubtype.RULE_ACTION_COMPLETED
             assert end_log.rule_name == "test_rule"
             assert end_log.success is True
-            assert end_log.execution_time_ms > 0
+            assert (
+                end_log.execution_time_ms is not None and end_log.execution_time_ms > 0
+            )
 
     async def test_audit_scope_error_logging(self, audit_service, db_engine):
         """Test audit scope error event logging"""
@@ -778,7 +787,10 @@ class TestRuleLifecycleAuditIntegration:
             assert error_log.event_subtype == EventSubtype.RULE_ACTION_FAILED
             assert error_log.rule_name == "test_rule"
             assert error_log.success is False
-            assert "Rule test_rule failed" in error_log.error_message
+            assert (
+                error_log.error_message is not None
+                and "Rule test_rule failed" in error_log.error_message
+            )
 
 
 class TestContextInheritance:
@@ -815,6 +827,7 @@ class TestContextInheritance:
             assert len(logs) == 1
 
             log = logs[0]
+            assert log is not None
             assert log.event_type == EventType.EXECUTION_LIFECYCLE
             assert log.event_subtype == EventSubtype.CONDITION_EVALUATED
             assert log.rule_name == "test_rule"  # From parent scope
@@ -823,6 +836,7 @@ class TestContextInheritance:
             # Check context_data contains additional fields
             import json
 
+            assert log.context_data is not None
             context_data = json.loads(log.context_data)
             assert context_data["result"] is True
             assert context_data["sensor_value"] == 85
@@ -852,11 +866,13 @@ class TestContextInheritance:
 
         with Session(db_engine) as session:
             log = session.exec(select(AuditLog)).first()
+            assert log is not None
             assert log.rule_name == "test_rule"  # From decorator scope
             assert log.condition_id == "motion_1"  # From context manager
 
             import json
 
+            assert log.context_data is not None
             context_data = json.loads(log.context_data)
             assert context_data["sensor_triggered"] is True
             assert context_data["sensor_location"] == "hallway"
@@ -891,6 +907,7 @@ class TestConditionEvaluatedEvent:
 
         with Session(db_engine) as session:
             log = session.exec(select(AuditLog)).first()
+            assert log is not None
             assert log.event_type == EventType.EXECUTION_LIFECYCLE
             assert log.event_subtype == EventSubtype.CONDITION_EVALUATED
             assert log.rule_name == "bedroom_lights"
@@ -898,6 +915,7 @@ class TestConditionEvaluatedEvent:
 
             import json
 
+            assert log.context_data is not None
             context_data = json.loads(log.context_data)
             assert context_data["result"] is True
             assert context_data["sensor_value"] == 75

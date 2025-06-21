@@ -2,6 +2,7 @@ import asyncio
 from contextlib import suppress
 from datetime import datetime
 
+from sqlalchemy import Engine
 from sqlmodel import Session
 
 from models.audit import AuditLog, EventSubtype, EventType
@@ -10,13 +11,13 @@ from models.audit import AuditLog, EventSubtype, EventType
 class AuditService:
     """Async audit service for non-blocking audit log writes"""
 
-    def __init__(self, db_engine):
-        self.db_engine = db_engine
-        self.audit_queue = asyncio.Queue()
-        self._writer_task = None
-        self._started = False
+    def __init__(self, db_engine: Engine):
+        self.db_engine: Engine = db_engine
+        self.audit_queue: asyncio.Queue[AuditLog] = asyncio.Queue()
+        self._writer_task: asyncio.Task[None] | None = None
+        self._started: bool = False
 
-    def start(self):
+    def start(self) -> None:
         """Start the audit writer task"""
         if self._writer_task is None:
             self._started = True

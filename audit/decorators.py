@@ -1,14 +1,18 @@
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from contextvars import ContextVar
 from functools import wraps
 import inspect
 import json
 import time
-from typing import Any
+from typing import Any, ParamSpec, TypeVar
 
 from audit.service import get_audit_service
 from models.audit import EventSubtype, EventType
+
+# Type parameters for the audit_scope decorator
+P = ParamSpec("P")
+T = TypeVar("T")
 
 # Database fields that are explicit columns in AuditLog table
 AUDIT_SCOPE_FIELDS = {"rule_name", "scene_name", "condition_id", "device_id"}
@@ -42,7 +46,9 @@ def audit_scope(
     device_id: str | None = None,
     # Additional context (goes to context_data JSON)
     **additional_context,
-):
+) -> Callable[
+    [Callable[P, Coroutine[Any, Any, T]]], Callable[P, Coroutine[Any, Any, T]]
+]:
     """
     Decorator for audit scope management with optional lifecycle event logging.
 
@@ -62,9 +68,11 @@ def audit_scope(
     if any(lifecycle_events) and event_type is None:
         raise ValueError("event_type is required when lifecycle events are specified")
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(
+        func: Callable[P, Coroutine[Any, Any, T]],
+    ) -> Callable[P, Coroutine[Any, Any, T]]:
         @wraps(func)
-        async def async_wrapper(*args, **kwargs):
+        async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             # Extract context from function arguments
             sig = inspect.signature(func)
             bound_args = sig.bind(*args, **kwargs)
@@ -116,11 +124,8 @@ def audit_scope(
                         **get_current_context(),
                     )
 
-                # Execute function
-                if asyncio.iscoroutinefunction(func):
-                    result = await func(*args, **kwargs)
-                else:
-                    result = func(*args, **kwargs)
+                # Execute function (all functions using this decorator are async)
+                function_result: T = await func(*args, **kwargs)
 
                 # Log successful completion if end_event specified
                 if audit_service and end_event and event_type:
@@ -132,7 +137,7 @@ def audit_scope(
                         success=True,
                         **get_current_context(),
                     )
-                return result
+                return function_result
 
             except Exception as e:
                 # Log failure if error_event specified
@@ -151,24 +156,8 @@ def audit_scope(
                 # Pop context using token
                 audit_context.reset(token)
 
-        @wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            # For sync functions, create async context and run
-            async def async_call():
-                return await async_wrapper(*args, **kwargs)
-
-            # If we're already in an async context, use it
-            try:
-                return func(*args, **kwargs)
-            except RuntimeError:
-                # No event loop running, create one
-                return asyncio.run(async_call())
-
-        # Return appropriate wrapper based on function type
-        if asyncio.iscoroutinefunction(func):
-            return async_wrapper
-        else:
-            return sync_wrapper
+        # Since all audit_scope usages are on async functions, we only need the async wrapper
+        return async_wrapper
 
     return decorator
 

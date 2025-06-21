@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from hubitat import HubitatClient
 from models.api import HubitatDeviceEvent
+from rules.engine import RuleEngine
 from tests.mock_timer_service import MockTimerService
 
 
@@ -62,7 +63,7 @@ class AsyncEventTracker:
     """Helper for tracking async events in tests."""
 
     def __init__(self):
-        self.events = []
+        self.events: list[dict[str, Any]] = []
         self.event_occurred = asyncio.Event()
 
     def record_event(self, event_name: str, **kwargs):
@@ -85,7 +86,7 @@ class AsyncEventTracker:
         except TimeoutError:
             return False
 
-    def get_events(self) -> list:
+    def get_events(self) -> list[dict[str, Any]]:
         """Get all recorded events."""
         return self.events.copy()
 
@@ -98,7 +99,7 @@ class AsyncEventTracker:
 class ConditionStateChecker:
     """Helper for verifying condition states in RuleEngine."""
 
-    def __init__(self, engine):
+    def __init__(self, engine: RuleEngine) -> None:
         self.engine = engine
 
     def verify_condition_exists(self, condition_id: str) -> bool:
@@ -121,7 +122,8 @@ class ConditionStateChecker:
         """Check if condition dependency exists."""
         if child_id not in self.engine._condition_deps:
             return False
-        return parent_id in self.engine._condition_deps[child_id]
+        dep_set = self.engine._condition_deps[child_id]
+        return bool(parent_id in dep_set)
 
     def get_active_condition_count(self) -> int:
         """Get number of active conditions."""

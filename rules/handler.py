@@ -68,7 +68,7 @@ class RuleHandler:
             )
 
             # Start the rule task
-            task = aio.create_task(
+            task: aio.Task[None] = aio.create_task(
                 self._run_rule_on_condition(
                     trigger_condition, rule_function, rule.name
                 ),
@@ -110,7 +110,7 @@ class RuleHandler:
             )
 
             # Start the scheduled rule task
-            task = aio.create_task(
+            task: aio.Task[None] = aio.create_task(
                 self._run_scheduled_rule(timer_function, rule_function, rule.name),
                 name=f"scheduled_rule:{rule.name}",
             )
@@ -181,7 +181,7 @@ class RuleHandler:
         if "rule_action" not in namespace:
             raise ValueError("Rule code must define a 'rule_action' async function")
 
-        rule_function = namespace["rule_action"]
+        rule_function: RuleRoutine = namespace["rule_action"]
         self._validate_function_signature(rule_function, "rule_action", 1)
         return rule_function
 
@@ -194,7 +194,7 @@ class RuleHandler:
         if "get_next_time" not in namespace:
             raise ValueError("Timer code must define a 'get_next_time' function")
 
-        timer_function = namespace["get_next_time"]
+        timer_function: TimerProvider = namespace["get_next_time"]
         self._validate_function_signature(timer_function, "get_next_time", 0)
         return timer_function
 
@@ -209,7 +209,7 @@ class RuleHandler:
                 "Trigger code must define a 'get_trigger_condition' function"
             )
 
-        trigger_function = namespace["get_trigger_condition"]
+        trigger_function: RuleTriggerProvider = namespace["get_trigger_condition"]
         self._validate_function_signature(trigger_function, "get_trigger_condition", 1)
         return trigger_function
 
