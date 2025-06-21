@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
+import sys
 import time
 
 from fastapi import FastAPI
@@ -44,7 +45,7 @@ web_app = FastAPI()
 
 
 @web_app.get("/")
-async def server_info(request: Request) -> PlainTextResponse:
+async def server_info(_: Request) -> PlainTextResponse:
     info = """Hubitat Rules MCP Server
 
 This Model Context Protocol (MCP) server provides automation rule management and scene control for Hubitat home automation systems.
@@ -75,7 +76,7 @@ The server integrates with your Hubitat hub to provide powerful, flexible automa
 
 
 @web_app.post("/he_event")
-async def receive_device_event(request: Request, ctx: Context) -> JSONResponse:
+async def receive_device_event(request: Request) -> JSONResponse:
     """Webhook endpoint to receive device events from Hubitat.
 
     This endpoint receives POST requests from Hubitat with device event data
@@ -99,14 +100,15 @@ async def receive_device_event(request: Request, ctx: Context) -> JSONResponse:
         async def _on_processing_complete(task):
             try:
                 await task  # Wait for the task to complete and check for exceptions
-                await ctx.info(
+                print(
                     f"Processed device event: device_id={device_event.device_id}, "
                     f"attribute={device_event.attribute}, value={device_event.value}"
                 )
             except Exception as e:
-                await ctx.error(
+                print(
                     f"Error processing device event: device_id={device_event.device_id}, "
-                    f"attribute={device_event.attribute}, error={str(e)}"
+                    f"attribute={device_event.attribute}, error={str(e)}",
+                    file=sys.stderr,
                 )
 
         # Start device event processing as fire-and-forget
@@ -130,7 +132,7 @@ async def receive_device_event(request: Request, ctx: Context) -> JSONResponse:
 
     except Exception as e:
         error_msg = f"Error parsing device event: {str(e)}"
-        await ctx.error(error_msg)
+        print(error_msg, file=sys.stderr)
 
         return JSONResponse({"success": False, "error": error_msg}, status_code=400)
 
@@ -187,9 +189,11 @@ async def lifespan(fastmcp: FastMCP):
         print(f"Re-installed {scene_count} scenes from the database")
 
     # Launch the web server
+    print("Starting webhook server")
     config = uvicorn.Config("main:web_app", host="0.0.0.0", port=8080)
     server = uvicorn.Server(config)
     web_app_task = asyncio.create_task(server.serve())
+    print("Webhook server started")
 
     yield  # Server runs here
 
