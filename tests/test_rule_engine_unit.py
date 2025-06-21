@@ -3,20 +3,18 @@
 These tests focus on testing individual methods in isolation using mocks.
 """
 
-import pytest
 from unittest.mock import MagicMock
 
-from rules.engine import RuleEngine, ConditionNotifier
+import pytest
+
+from rules.engine import ConditionNotifier
 from tests.test_conditions import (
-    SimpleCondition,
-    TimeoutCondition,
     ConditionWithSubconditions,
+    SimpleCondition,
 )
 from tests.test_helpers import (
-    create_mock_hubitat_client,
-    create_mock_timer_service,
-    assert_engine_state_clean,
     ConditionStateChecker,
+    assert_engine_state_clean,
 )
 
 
@@ -166,7 +164,7 @@ class TestRemoveCondition:
 class TestPropagateStateUpdate:
     """Test _propagate_state_update method."""
 
-    def test_updates_single_condition_state(self, rule_engine):
+    async def test_updates_single_condition_state(self, rule_engine):
         """Test that state update changes condition state."""
         condition = SimpleCondition("test_condition")
         condition.set_state(True)  # Set condition to evaluate to True
@@ -176,14 +174,14 @@ class TestPropagateStateUpdate:
         rule_engine._conditions["test_condition"] = (notifier, False)
 
         # Propagate state update
-        touched = rule_engine._propagate_state_update([notifier])
+        touched = await rule_engine._propagate_state_update([notifier])
 
         # Verify state was updated
         assert rule_engine._conditions["test_condition"][1] is True
         assert len(touched) == 1
         assert touched[0] == notifier
 
-    def test_no_update_when_state_unchanged(self, rule_engine):
+    async def test_no_update_when_state_unchanged(self, rule_engine):
         """Test that no update occurs when condition state hasn't changed."""
         condition = SimpleCondition("test_condition")
         condition.set_state(False)  # Keep condition False
@@ -193,13 +191,13 @@ class TestPropagateStateUpdate:
         rule_engine._conditions["test_condition"] = (notifier, False)
 
         # Propagate state update
-        touched = rule_engine._propagate_state_update([notifier])
+        touched = await rule_engine._propagate_state_update([notifier])
 
         # Verify state unchanged but condition was still touched
         assert rule_engine._conditions["test_condition"][1] is False
         assert len(touched) == 1
 
-    def test_propagates_to_dependent_conditions(self, rule_engine):
+    async def test_propagates_to_dependent_conditions(self, rule_engine):
         """Test that state changes propagate to dependent conditions."""
         child = SimpleCondition("child")
         child.set_state(True)
@@ -217,7 +215,7 @@ class TestPropagateStateUpdate:
         parent.on_condition_event = MagicMock()
 
         # Propagate child state update
-        touched = rule_engine._propagate_state_update([child_notifier])
+        touched = await rule_engine._propagate_state_update([child_notifier])
 
         # Verify parent was notified of child state change
         parent.on_condition_event.assert_called_once_with(child, True)
@@ -227,7 +225,7 @@ class TestPropagateStateUpdate:
         assert "child" in touched_ids
         assert "parent" in touched_ids
 
-    def test_handles_missing_dependent_condition(self, rule_engine):
+    async def test_handles_missing_dependent_condition(self, rule_engine):
         """Test that missing dependent conditions don't cause errors."""
         condition = SimpleCondition("test_condition")
         condition.set_state(True)
@@ -238,13 +236,13 @@ class TestPropagateStateUpdate:
         rule_engine._condition_deps["test_condition"] = {"nonexistent"}
 
         # Should not raise an exception
-        touched = rule_engine._propagate_state_update([notifier])
+        touched = await rule_engine._propagate_state_update([notifier])
 
         # Should still process the original condition
         assert len(touched) == 1
         assert touched[0] == notifier
 
-    def test_handles_multiple_initial_conditions(self, rule_engine):
+    async def test_handles_multiple_initial_conditions(self, rule_engine):
         """Test that multiple conditions can be updated simultaneously."""
         condition1 = SimpleCondition("condition1")
         condition2 = SimpleCondition("condition2")
@@ -259,7 +257,7 @@ class TestPropagateStateUpdate:
         rule_engine._conditions["condition2"] = (notifier2, False)
 
         # Propagate updates for both
-        touched = rule_engine._propagate_state_update([notifier1, notifier2])
+        touched = await rule_engine._propagate_state_update([notifier1, notifier2])
 
         # Verify both were updated
         assert rule_engine._conditions["condition1"][1] is True

@@ -1,8 +1,9 @@
 """Unit tests for TimerService."""
 
 import asyncio
-import time
 from datetime import timedelta
+import time
+
 import pytest
 
 from timing.timers import TimerService

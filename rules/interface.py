@@ -1,8 +1,9 @@
 import asyncio as aio
 from datetime import datetime, time, timedelta
-from typing import Self
+from typing import Any, Self
 
-from hubitat import HubitatClient
+from hubitat import HubitatClient, HubitatDevice
+from models.api import SceneSetResponse
 from rules.condition import (
     AbstractCondition,
     AlwaysFalseCondition,
@@ -14,7 +15,6 @@ from rules.condition import (
 )
 from rules.engine import RuleEngine
 from scenes.manager import SceneManager
-from models.api import SceneSetResponse
 
 
 class Attribute:
@@ -25,7 +25,7 @@ class Attribute:
         self._attr_name = attr_name
         self._he_client = he_client
 
-    async def fetch(self) -> any:
+    async def fetch(self) -> Any:
         """Fetch the current value of this attribute from Hubitat.
 
         Returns:
@@ -34,7 +34,7 @@ class Attribute:
         attributes = await self._he_client.get_all_attributes(self._device_id)
         return attributes.get(self._attr_name)
 
-    def _compare(self, other: any, op: str) -> AbstractCondition:
+    def _compare(self, other: Any, op: str) -> AbstractCondition:
         """Helper method to handle all comparison operations.
 
         Args:
@@ -54,22 +54,22 @@ class Attribute:
                 self._device_id, self._attr_name, op, other
             )
 
-    def __gt__(self, other: any) -> AbstractCondition:
+    def __gt__(self, other: Any) -> AbstractCondition:
         return self._compare(other, ">")
 
-    def __ge__(self, other: any) -> AbstractCondition:
+    def __ge__(self, other: Any) -> AbstractCondition:
         return self._compare(other, ">=")
 
-    def __lt__(self, other: any) -> AbstractCondition:
+    def __lt__(self, other: Any) -> AbstractCondition:
         return self._compare(other, "<")
 
-    def __le__(self, other: any) -> AbstractCondition:
+    def __le__(self, other: Any) -> AbstractCondition:
         return self._compare(other, "<=")
 
-    def __eq__(self, other: any) -> AbstractCondition:
+    def __eq__(self, other: Any) -> AbstractCondition:  # type: ignore[override]
         return self._compare(other, "=")
 
-    def __ne__(self, other: any) -> AbstractCondition:
+    def __ne__(self, other: Any) -> AbstractCondition:  # type: ignore[override]
         return self._compare(other, "!=")
 
 
@@ -81,7 +81,7 @@ class Command:
         self._device_id = device_id
         self._command = command
 
-    async def __call__(self, *args: any, **_: any) -> None:
+    async def __call__(self, *args: Any, **_: Any) -> None:
         await self._he_client.send_command(self._device_id, self._command, *args)
 
 
@@ -91,7 +91,7 @@ class Device:
     def __init__(self, device_id: int, he_client: HubitatClient):
         self._device_id = device_id
         self._he_client = he_client
-        self._he_device = None  # Cache for the fetched device
+        self._he_device: HubitatDevice | None = None  # Cache for the fetched device
         self._loaded = False  # Track if device data has been loaded
 
     async def load(self) -> Self:
@@ -113,6 +113,7 @@ class Device:
 
     def __getattr__(self, attr_name: str) -> Attribute | Command:
         self._check_loaded()
+        assert self._he_device is not None  # _check_loaded ensures this
 
         if self._he_device.has_attribute(attr_name):
             return Attribute(self._device_id, attr_name, self._he_client)
@@ -322,7 +323,7 @@ class RuleUtilities:
         """
         await self._engine.add_condition(condition)
         result = self._engine.get_condition_state(condition)
-        self._engine.remove_condition(condition)
+        await self._engine.remove_condition(condition)
         return result
 
     async def _wait_for_condition(
@@ -361,7 +362,7 @@ class RuleUtilities:
                 task.cancel()
 
             # Remove the condition from tracking
-            self._engine.remove_condition(condition)
+            await self._engine.remove_condition(condition)
 
             # Check which task completed
             completed_task = done.pop()
@@ -369,5 +370,5 @@ class RuleUtilities:
         else:
             await event.wait()
             # Remove the condition from tracking
-            self._engine.remove_condition(condition)
+            await self._engine.remove_condition(condition)
             return True

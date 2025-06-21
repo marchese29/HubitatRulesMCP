@@ -1,6 +1,7 @@
 import asyncio
-from typing import Any, Optional
+from typing import Any
 
+from audit.decorators import audit_scope
 from hubitat import HubitatClient
 from models.api import (
     CommandResult,
@@ -9,6 +10,7 @@ from models.api import (
     SceneSetResponse,
     SceneWithStatus,
 )
+from models.audit import EventSubtype, EventType
 
 
 class SceneManager:
@@ -20,26 +22,35 @@ class SceneManager:
         self._device_to_scenes: dict[int, set[str]] = {}
 
     # CRUD Operations
-    async def create_scene(self, scene: Scene) -> Scene:
+    @audit_scope(
+        event_type=EventType.SCENE_LIFECYCLE,
+        end_event=EventSubtype.SCENE_CREATED,
+        error_event=EventSubtype.SCENE_CREATED,
+        scene_name="scene_name",
+    )
+    async def create_scene(self, scene_name: str, scene: Scene) -> Scene:
         """Create a new scene."""
-        if scene.name in self._scenes:
-            raise ValueError(f"Scene '{scene.name}' already exists")
+        if scene_name in self._scenes:
+            raise ValueError(f"Scene '{scene_name}' already exists")
+
+        # Update scene name to match parameter
+        scene.name = scene_name
 
         # Add to memory
-        self._scenes[scene.name] = scene
+        self._scenes[scene_name] = scene
 
         # Update device index
         for req in scene.device_states:
             if req.device_id not in self._device_to_scenes:
                 self._device_to_scenes[req.device_id] = set()
-            self._device_to_scenes[req.device_id].add(scene.name)
+            self._device_to_scenes[req.device_id].add(scene_name)
 
         return scene
 
     async def get_scenes(
         self,
-        name: Optional[str] = None,
-        device_id: Optional[int] = None,
+        name: str | None = None,
+        device_id: int | None = None,
     ) -> list[SceneWithStatus]:
         """Get scenes with optional filtering. Includes current set status."""
         # Filter scenes based on parameters
@@ -89,6 +100,12 @@ class SceneManager:
 
         return scenes_with_status
 
+    @audit_scope(
+        event_type=EventType.SCENE_LIFECYCLE,
+        end_event=EventSubtype.SCENE_DELETED,
+        error_event=EventSubtype.SCENE_DELETED,
+        scene_name="name",
+    )
     async def delete_scene(self, name: str) -> Scene:
         """Delete a scene and return its definition."""
         if name not in self._scenes:
@@ -109,6 +126,12 @@ class SceneManager:
         return scene
 
     # Scene Operations
+    @audit_scope(
+        event_type=EventType.SCENE_LIFECYCLE,
+        end_event=EventSubtype.SCENE_APPLIED,
+        error_event=EventSubtype.SCENE_APPLIED,
+        scene_name="name",
+    )
     async def set_scene(self, name: str) -> SceneSetResponse:
         """Apply a scene by sending commands to devices."""
         if name not in self._scenes:

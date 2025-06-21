@@ -1,8 +1,10 @@
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 from pydantic import BaseModel
 
+from audit.decorators import audit_scope
+from models.audit import EventSubtype, EventType
 from util import env_var
 
 
@@ -54,8 +56,15 @@ class HubitatClient:
 
         return resp
 
+    @audit_scope(
+        event_type=EventType.DEVICE_CONTROL,
+        end_event=EventSubtype.DEVICE_COMMAND,
+        error_event=EventSubtype.DEVICE_COMMAND,
+        device_id="device_id",
+        command="command",
+    )
     async def send_command(
-        self, device_id: int, command: str, arguments: Optional[list[Any]] = None
+        self, device_id: int, command: str, arguments: list[Any] | None = None
     ):
         """Send a command with optional arguments to a device.
 

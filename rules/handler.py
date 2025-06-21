@@ -1,15 +1,17 @@
 import asyncio as aio
-import inspect
+from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from datetime import datetime, timedelta
-from typing import Awaitable, Callable
+import inspect
 
+from audit.decorators import audit_scope, log_audit_event
 from hubitat import HubitatClient
+from models.audit import EventSubtype, EventType
 from models.database import DBRule
 from rules.condition import AbstractCondition
 from rules.engine import RuleEngine
 from rules.interface import RuleUtilities
 from scenes.manager import SceneManager
-
 
 RuleTriggerProvider = Callable[[RuleUtilities], Awaitable[AbstractCondition]]
 RuleRoutine = Callable[[RuleUtilities], Awaitable[None]]
@@ -28,7 +30,13 @@ class RuleHandler:
         self._scene_manager = scene_manager
         self._active_rules: dict[str, aio.Task] = {}
 
-    async def install_rule(self, rule: DBRule):
+    @audit_scope(
+        event_type=EventType.RULE_LIFECYCLE,
+        end_event=EventSubtype.RULE_LOADED,
+        error_event=EventSubtype.RULE_LOADED,
+        rule_name="rule_name",
+    )
+    async def install_rule(self, rule: DBRule, rule_name: str):
         """Installs a rule that runs on a given trigger."""
         if rule.name in self._active_rules:
             raise ValueError(f"Rule '{rule.name}' already exists. Uninstall it first.")
@@ -41,6 +49,8 @@ class RuleHandler:
             namespace = self._create_execution_namespace()
 
             # Execute and validate trigger provider
+            if rule.trigger_code is None:
+                raise ValueError("Rule trigger_code cannot be None")
             trigger_function = self._execute_and_validate_trigger_provider(
                 rule.trigger_code, namespace
             )
@@ -59,7 +69,9 @@ class RuleHandler:
 
             # Start the rule task
             task = aio.create_task(
-                self._run_rule_on_condition(trigger_condition, rule_function),
+                self._run_rule_on_condition(
+                    trigger_condition, rule_function, rule.name
+                ),
                 name=f"rule:{rule.name}",
             )
             self._active_rules[rule.name] = task
@@ -67,7 +79,13 @@ class RuleHandler:
         except Exception as e:
             raise RuntimeError(f"Failed to install rule '{rule.name}': {e}") from e
 
-    async def install_scheduled_rule(self, rule: DBRule):
+    @audit_scope(
+        event_type=EventType.RULE_LIFECYCLE,
+        end_event=EventSubtype.RULE_LOADED,
+        error_event=EventSubtype.RULE_LOADED,
+        rule_name="rule_name",
+    )
+    async def install_scheduled_rule(self, rule: DBRule, rule_name: str):
         """Installs a rule that runs on a scheduled timer."""
         if rule.name in self._active_rules:
             raise ValueError(f"Rule '{rule.name}' already exists. Uninstall it first.")
@@ -80,6 +98,8 @@ class RuleHandler:
             namespace = self._create_execution_namespace()
 
             # Execute and validate timer provider
+            if rule.time_provider is None:
+                raise ValueError("Rule time_provider cannot be None")
             timer_function = self._execute_and_validate_timer_provider(
                 rule.time_provider, namespace
             )
@@ -91,7 +111,7 @@ class RuleHandler:
 
             # Start the scheduled rule task
             task = aio.create_task(
-                self._run_scheduled_rule(timer_function, rule_function),
+                self._run_scheduled_rule(timer_function, rule_function, rule.name),
                 name=f"scheduled_rule:{rule.name}",
             )
             self._active_rules[rule.name] = task
@@ -101,7 +121,13 @@ class RuleHandler:
                 f"Failed to install scheduled rule '{rule.name}': {e}"
             ) from e
 
-    async def uninstall_rule(self, rule: DBRule):
+    @audit_scope(
+        event_type=EventType.RULE_LIFECYCLE,
+        end_event=EventSubtype.RULE_DELETED,
+        error_event=EventSubtype.RULE_DELETED,
+        rule_name="rule_name",
+    )
+    async def uninstall_rule(self, rule: DBRule, rule_name: str):
         """Uninstall a rule"""
         if rule.name not in self._active_rules:
             raise ValueError(f"Rule '{rule.name}' does not exist")
@@ -110,10 +136,8 @@ class RuleHandler:
         task = self._active_rules[rule.name]
         task.cancel()
 
-        try:
+        with suppress(aio.CancelledError):
             await task
-        except aio.CancelledError:
-            pass  # Expected when cancelling
 
         # Remove from active rules
         del self._active_rules[rule.name]
@@ -189,8 +213,9 @@ class RuleHandler:
         self._validate_function_signature(trigger_function, "get_trigger_condition", 1)
         return trigger_function
 
+    @audit_scope(rule_name="rule_name")
     async def _run_rule_on_condition(
-        self, trigger: AbstractCondition, action: RuleRoutine
+        self, trigger: AbstractCondition, action: RuleRoutine, rule_name: str
     ):
         """Run a rule repeatedly when its trigger condition becomes true."""
         try:
@@ -200,29 +225,53 @@ class RuleHandler:
                 await self._rule_engine.add_condition(trigger, condition_event=event)
                 await event.wait()
 
+                # Log trigger fired
+                await log_audit_event(
+                    EventType.EXECUTION_LIFECYCLE,
+                    EventSubtype.TRIGGER_FIRED,
+                )
+
                 # Remove the condition while running the rule
                 await self._rule_engine.remove_condition(trigger)
 
                 try:
+                    # Log rule action start
+                    await log_audit_event(
+                        EventType.EXECUTION_LIFECYCLE,
+                        EventSubtype.RULE_ACTION_STARTED,
+                    )
+
                     # Run the rule
                     await action(
                         RuleUtilities(
                             self._rule_engine, self._he_client, self._scene_manager
                         )
                     )
+
+                    # Log rule action completed
+                    await log_audit_event(
+                        EventType.EXECUTION_LIFECYCLE,
+                        EventSubtype.RULE_ACTION_COMPLETED,
+                        success=True,
+                    )
                 except Exception as e:
-                    # Log rule execution error but continue monitoring
+                    # Log rule action failed
+                    await log_audit_event(
+                        EventType.EXECUTION_LIFECYCLE,
+                        EventSubtype.RULE_ACTION_FAILED,
+                        success=False,
+                        error_message=str(e),
+                    )
                     print(f"Error executing rule: {e}")
         except aio.CancelledError:
             # Cleanup when rule is cancelled
-            try:
+            with suppress(Exception):
                 await self._rule_engine.remove_condition(trigger)
-            except Exception:
-                pass  # Condition might already be removed
             raise
 
+    @audit_scope(rule_name="rule_name")
     async def _run_scheduled_rule(
-        self, timer_provider: TimerProvider, action: RuleRoutine
+        self, timer_provider: TimerProvider, action: RuleRoutine, rule_name: str
     ):
         """Run a rule repeatedly at scheduled times."""
         while (next_trigger := await timer_provider()) is not None:
@@ -237,6 +286,38 @@ class RuleHandler:
             # Wait until the trigger time then run the rule
             wait = next_trigger - datetime.now()
             await aio.sleep(wait.total_seconds())
-            await action(
-                RuleUtilities(self._rule_engine, self._he_client, self._scene_manager)
+
+            # Log trigger fired
+            await log_audit_event(
+                EventType.EXECUTION_LIFECYCLE,
+                EventSubtype.TRIGGER_FIRED,
             )
+
+            try:
+                # Log rule action start
+                await log_audit_event(
+                    EventType.EXECUTION_LIFECYCLE,
+                    EventSubtype.RULE_ACTION_STARTED,
+                )
+
+                await action(
+                    RuleUtilities(
+                        self._rule_engine, self._he_client, self._scene_manager
+                    )
+                )
+
+                # Log rule action completed
+                await log_audit_event(
+                    EventType.EXECUTION_LIFECYCLE,
+                    EventSubtype.RULE_ACTION_COMPLETED,
+                    success=True,
+                )
+            except Exception as e:
+                # Log rule action failed
+                await log_audit_event(
+                    EventType.EXECUTION_LIFECYCLE,
+                    EventSubtype.RULE_ACTION_FAILED,
+                    success=False,
+                    error_message=str(e),
+                )
+                raise  # Re-raise to break the loop for scheduled rules

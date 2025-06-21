@@ -1,8 +1,9 @@
 import asyncio as aio
 from asyncio import Queue, Task
+from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Awaitable, Callable, Optional
 
 
 @dataclass
@@ -30,7 +31,7 @@ class TimerService:
     def __init__(self):
         self._timers: dict[str, Timer] = {}
         self._queue: Queue[TimerRequest] = Queue()
-        self._processor_task: Optional[Task] = None
+        self._processor_task: Task | None = None
 
     def start(self):
         """Start the timer service and its background processor.
@@ -45,10 +46,8 @@ class TimerService:
         """Stop the timer service and its background processor."""
         if self._processor_task is not None:
             self._processor_task.cancel()
-            try:
+            with suppress(aio.CancelledError):
                 await self._processor_task
-            except aio.CancelledError:
-                pass
             self._processor_task = None
 
     async def _process_queue(self) -> None:

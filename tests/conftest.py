@@ -1,11 +1,14 @@
 """Pytest configuration and shared fixtures."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+from sqlmodel import Session, SQLModel, create_engine
+
+from audit import service as audit_service_module
+from audit.service import AuditService
 from hubitat import HubitatClient, HubitatDevice
 from rules.engine import RuleEngine
-from tests.mock_timer_service import MockTimerService
 from tests.test_helpers import create_mock_hubitat_client, create_mock_timer_service
 
 
@@ -74,3 +77,33 @@ def rule_engine_with_device_attrs(mock_timer_service):
     }
     client = create_mock_hubitat_client(device_attrs)
     return RuleEngine(client, mock_timer_service)
+
+
+# Database Testing Fixtures
+
+
+@pytest.fixture
+def db_engine():
+    """Create an in-memory SQLite database for testing."""
+    engine = create_engine("sqlite:///:memory:", echo=False)
+    SQLModel.metadata.create_all(engine)
+    return engine
+
+
+@pytest.fixture
+def db_session(db_engine):
+    """Create a database session for testing."""
+    with Session(db_engine) as session:
+        yield session
+
+
+@pytest.fixture
+async def audit_service(db_engine):
+    """Create and start an audit service for testing."""
+    # Set up the global audit service for testing
+    service = AuditService(db_engine)
+    audit_service_module.audit_service = service
+    service.start()
+    yield service
+    await service.stop()
+    audit_service_module.audit_service = None

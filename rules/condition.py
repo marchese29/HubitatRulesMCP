@@ -1,5 +1,5 @@
 from datetime import timedelta
-from typing import override
+from typing import Any, override
 
 from models.api import HubitatDeviceEvent
 from rules.engine import EngineCondition
@@ -16,7 +16,7 @@ class AbstractCondition(EngineCondition):
 
     @timeout.setter
     def timeout(self, value: timedelta):
-        setattr(self, "_timeout", value)
+        self._timeout = value
 
     @property
     @override
@@ -25,7 +25,7 @@ class AbstractCondition(EngineCondition):
 
     @duration.setter
     def duration(self, value: timedelta):
-        setattr(self, "_duration", value)
+        self._duration = value
 
 
 class AttributeChangeCondition(AbstractCondition):
@@ -52,7 +52,7 @@ class AttributeChangeCondition(AbstractCondition):
             self._curr_value = event.value
 
     @override
-    def initialize(self, attrs: dict[int, dict[str, any]], conds: dict[str, bool]):
+    def initialize(self, attrs: dict[int, dict[str, Any]], conds: dict[str, bool]):
         self._prev_value = attrs[self._device_id][self._attr_name]
         self._curr_value = self._prev_value
         return False
@@ -79,12 +79,12 @@ class BooleanCondition(AbstractCondition):
 
     @property
     @override
-    def subconditions(self) -> list[AbstractCondition]:
+    def subconditions(self) -> list[EngineCondition]:
         return [c for (c, _) in self._conditions.values()]
 
     @override
     def initialize(
-        self, attrs: dict[int, dict[str, any]], conds: dict[str, bool]
+        self, attrs: dict[int, dict[str, Any]], conds: dict[str, bool]
     ) -> bool:
         for condition_id, state in conds.items():
             self._conditions[condition_id] = (
@@ -97,9 +97,9 @@ class BooleanCondition(AbstractCondition):
     def evaluate(self) -> bool:
         match self._operator:
             case "and":
-                return all([state for (_, state) in self._conditions.values()])
+                return all(state for (_, state) in self._conditions.values())
             case "or":
-                return any([state for (_, state) in self._conditions.values()])
+                return any(state for (_, state) in self._conditions.values())
             case "not":
                 return not [state for (_, state) in self._conditions.values()][0]
             case _:
@@ -144,7 +144,7 @@ class DynamicDeviceAttributeCondition(AbstractCondition):
 
     @override
     def initialize(
-        self, attrs: dict[int, dict[str, any]], conds: dict[str, bool]
+        self, attrs: dict[int, dict[str, Any]], conds: dict[str, bool]
     ) -> bool:
         self._left_value = attrs[self._left_device_id][self._left_attr_name]
         self._right_value = attrs[self._right_device_id][self._right_attr_name]
@@ -158,12 +158,24 @@ class DynamicDeviceAttributeCondition(AbstractCondition):
             case "!=":
                 return self._left_value != self._right_value
             case ">":
+                # Handle None values - ordering comparisons with None are undefined
+                if self._left_value is None or self._right_value is None:
+                    return False
                 return self._left_value > self._right_value
             case ">=":
+                # Handle None values - ordering comparisons with None are undefined
+                if self._left_value is None or self._right_value is None:
+                    return False
                 return self._left_value >= self._right_value
             case "<":
+                # Handle None values - ordering comparisons with None are undefined
+                if self._left_value is None or self._right_value is None:
+                    return False
                 return self._left_value < self._right_value
             case "<=":
+                # Handle None values - ordering comparisons with None are undefined
+                if self._left_value is None or self._right_value is None:
+                    return False
                 return self._left_value <= self._right_value
             case _:
                 raise ValueError(f"Unknown operator: {self._operator}")
@@ -172,7 +184,7 @@ class DynamicDeviceAttributeCondition(AbstractCondition):
 class StaticDeviceAttributeCondition(AbstractCondition):
     """A condition for the comparison of a device attribute against a static value"""
 
-    def __init__(self, device_id: int, attr_name: str, operator: str, value: any):
+    def __init__(self, device_id: int, attr_name: str, operator: str, value: Any):
         self._device_id = device_id
         self._attr_name = attr_name
         self._device_value = None
@@ -188,7 +200,7 @@ class StaticDeviceAttributeCondition(AbstractCondition):
             f"{self._operator} {self._value})"
         )
 
-    def _cast_value(self, value: any) -> any:
+    def _cast_value(self, value: Any) -> Any:
         """Cast the incoming value to match the model value type.
 
         Args:
@@ -228,7 +240,7 @@ class StaticDeviceAttributeCondition(AbstractCondition):
 
     @override
     def initialize(
-        self, attrs: dict[int, dict[str, any]], conds: dict[str, bool]
+        self, attrs: dict[int, dict[str, Any]], conds: dict[str, bool]
     ) -> bool:
         self._device_value = self._cast_value(attrs[self._device_id][self._attr_name])
         return self.evaluate()
@@ -273,7 +285,7 @@ class AlwaysFalseCondition(AbstractCondition):
         pass  # Never changes state
 
     @override
-    def initialize(self, attrs: dict[int, dict[str, any]], conds: dict[str, bool]):
+    def initialize(self, attrs: dict[int, dict[str, Any]], conds: dict[str, bool]):
         return False  # Always false
 
     @override
@@ -303,7 +315,7 @@ class SceneChangeCondition(AbstractCondition):
 
     @property
     @override
-    def subconditions(self) -> list[AbstractCondition]:
+    def subconditions(self) -> list[EngineCondition]:
         return [self._scene_condition]
 
     @override
@@ -312,7 +324,7 @@ class SceneChangeCondition(AbstractCondition):
         self._scene_condition.on_device_event(event)
 
     @override
-    def initialize(self, attrs: dict[int, dict[str, any]], conds: dict[str, bool]):
+    def initialize(self, attrs: dict[int, dict[str, Any]], conds: dict[str, bool]):
         # Initialize the wrapped condition and get its initial state
         scene_state = self._scene_condition.initialize(attrs, conds)
         self._prev_state = scene_state

@@ -11,7 +11,6 @@ from datetime import timedelta
 
 import pytest
 
-
 from .test_conditions import (
     AlwaysFalseCondition,
     AlwaysTrueCondition,
@@ -635,7 +634,7 @@ class TestEngineResourceManagement:
         events = [asyncio.Event() for _ in conditions]
 
         # Add all conditions
-        for condition, event in zip(conditions, events):
+        for condition, event in zip(conditions, events, strict=False):
             await engine.add_condition(condition, event)
 
         # Verify all conditions exist
@@ -643,7 +642,9 @@ class TestEngineResourceManagement:
             assert engine.get_condition_state(condition) is False
 
         # Fire conditions one by one
-        for i, (condition, condition_event) in enumerate(zip(conditions, events)):
+        for i, (condition, condition_event) in enumerate(
+            zip(conditions, events, strict=False)
+        ):
             # Trigger this specific condition
             device_event = create_device_event(100 + i, "switch", "on")
             await engine.on_device_event(device_event)

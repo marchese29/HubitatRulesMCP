@@ -9,9 +9,9 @@ Usage:
     python run_tests.py --verbose         # Run with verbose output
 """
 
+import argparse
 import subprocess
 import sys
-import argparse
 
 
 def run_tests(test_type=None, verbose=False):

@@ -1,27 +1,31 @@
 import asyncio
 from contextlib import asynccontextmanager
+import time
 
-from fastmcp import FastMCP, Context
-from sqlmodel import SQLModel, Session, create_engine, select
+from fastmcp import Context, FastMCP
+from sqlmodel import Session, SQLModel, create_engine, select
 from starlette.requests import Request
-from starlette.responses import PlainTextResponse, JSONResponse
+from starlette.responses import JSONResponse, PlainTextResponse
 
+from audit import service as audit_service_module
+from audit.decorators import log_audit_event
+from audit.service import AuditService
 from hubitat import HubitatClient
 from logic.rule_logic import RuleLogic
 from models.api import (
-    HubitatDeviceEvent,
-    Scene,
     DeviceStateRequirement,
+    HubitatDeviceEvent,
+    RuleInfo,
+    Scene,
     SceneSetResponse,
     SceneWithStatus,
-    RuleInfo,
 )
+from models.audit import EventSubtype, EventType
 from models.database import DBRule
 from rules.engine import RuleEngine
 from rules.handler import RuleHandler
-from timing.timers import TimerService
 from scenes.manager import SceneManager
-
+from timing.timers import TimerService
 
 # Common Resources
 he_client = HubitatClient()
@@ -37,6 +41,12 @@ async def lifespan(fastmcp: FastMCP):
     """Handle startup and shutdown for the MCP server"""
     print("Hubitat Rules MCP server starting up...")
 
+    # Initialize and start audit service
+    print("Starting audit service...")
+    audit_service_module.audit_service = AuditService(fastmcp.db_engine)  # type: ignore[attr-defined]
+    audit_service_module.audit_service.start()
+    print("Audit service started")
+
     print("Initiating TimerService")
     timer_service.start()
     print("TimerService started")
@@ -44,17 +54,29 @@ async def lifespan(fastmcp: FastMCP):
     # Load existing rules from the database
     print("Re-installing rules from the database")
     count = 0
-    with Session(fastmcp.db_engine) as session:
+    with Session(fastmcp.db_engine) as session:  # type: ignore[attr-defined]
         for rule in session.exec(select(DBRule)):
             count += 1
+            start_time = time.time()
+
             if rule.time_provider is not None:
                 print(f"Installing scheduled rule '{rule.name}'")
                 rule_handler.install_scheduled_rule(rule)
             else:
                 print(f"Installing triggered rule '{rule.name}'")
                 rule_handler.install_rule(rule)
+
+            # Log rule loading to audit with timing
+            execution_time = (time.time() - start_time) * 1000
+            await log_audit_event(
+                EventType.RULE_LIFECYCLE,
+                EventSubtype.RULE_LOADED,
+                rule_name=rule.name,
+                execution_time_ms=execution_time,
+                success=True,
+            )
     if count > 0:
-        print("Re-installed {count} rules from the database")
+        print(f"Re-installed {count} rules from the database")
 
     yield  # Server runs here
 
@@ -74,13 +96,18 @@ async def lifespan(fastmcp: FastMCP):
         # Stop the timer service
         await timer_service.stop()
         print("Timer service stopped")
+
+        # Stop the audit service
+        if audit_service_module.audit_service:
+            await audit_service_module.audit_service.stop()
+            print("Audit service stopped")
     except Exception as e:
         print(f"Error during shutdown: {e}")
 
 
 mcp = FastMCP(name="Hubitat Rules", lifespan=lifespan)
-mcp.db_engine = create_engine("sqlite:///rulesdb.db", echo=True)
-SQLModel.metadata.create_all(mcp.db_engine)
+mcp.db_engine = create_engine("sqlite:///rulesdb.db", echo=True)  # type: ignore[attr-defined]
+SQLModel.metadata.create_all(mcp.db_engine)  # type: ignore[attr-defined]
 
 
 @mcp.custom_route("/", methods=["GET"])
@@ -91,7 +118,7 @@ This Model Context Protocol (MCP) server provides automation rule management and
 
 Features:
 • Install and manage condition-based automation rules
-• Install and manage scheduled automation rules  
+• Install and manage scheduled automation rules
 • Create and manage device scenes with state requirements
 • Real-time device state monitoring and triggers
 • Timer-based scheduling with cron support
@@ -197,7 +224,7 @@ async def get_programming_guide() -> str:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         guide_path = os.path.join(script_dir, "hubitat_rules_programming_guide.md")
 
-        with open(guide_path, "r", encoding="utf-8") as f:
+        with open(guide_path, encoding="utf-8") as f:
             return f.read()
     except FileNotFoundError:
         return (
@@ -368,7 +395,7 @@ async def create_scene(
             updated_at=datetime.now(),
         )
 
-        created_scene = await scene_manager.create_scene(scene)
+        created_scene = await scene_manager.create_scene(name, scene)
 
         # Convert to SceneWithStatus with current status
         is_set = await scene_manager.is_scene_set(created_scene)
@@ -442,6 +469,6 @@ async def set_scene(name: str, ctx: Context) -> SceneSetResponse:
 
 if __name__ == "__main__":
     try:
-        mcp.run(transport="streamable-http", host="0.0.0.0", port=8080)
+        mcp.run()
     except KeyboardInterrupt:
         print("\nShutdown completed gracefully.")

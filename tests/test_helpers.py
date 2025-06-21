@@ -1,11 +1,11 @@
 """Helper functions and factories for RuleEngine testing."""
 
 import asyncio
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
-from typing import Dict, Any
 
-from models.api import HubitatDeviceEvent
 from hubitat import HubitatClient
+from models.api import HubitatDeviceEvent
 from tests.mock_timer_service import MockTimerService
 
 
@@ -26,7 +26,7 @@ def create_device_event(
 
 
 def create_mock_hubitat_client(
-    device_attributes: Dict[int, Dict[str, Any]] = None,
+    device_attributes: dict[int, dict[str, Any]] | None = None,
 ) -> HubitatClient:
     """Create a mock HubitatClient for testing.
 
@@ -42,7 +42,7 @@ def create_mock_hubitat_client(
     if device_attributes is None:
         device_attributes = {}
 
-    async def mock_get_all_attributes(device_id: int) -> Dict[str, Any]:
+    async def mock_get_all_attributes(device_id: int) -> dict[str, Any]:
         return device_attributes.get(device_id, {})
 
     mock_client.get_all_attributes = AsyncMock(side_effect=mock_get_all_attributes)
@@ -82,7 +82,7 @@ class AsyncEventTracker:
         try:
             await asyncio.wait_for(self.event_occurred.wait(), timeout=timeout)
             return True
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return False
 
     def get_events(self) -> list:

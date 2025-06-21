@@ -1,10 +1,10 @@
 """Test condition classes for RuleEngine testing."""
 
 from datetime import timedelta
-from typing import List, Dict, Any
+from typing import Any
 
-from rules.engine import EngineCondition
 from models.api import HubitatDeviceEvent
+from rules.engine import EngineCondition
 
 
 class SimpleCondition(EngineCondition):
@@ -30,11 +30,11 @@ class SimpleCondition(EngineCondition):
         return self._identifier
 
     @property
-    def device_ids(self) -> List[int]:
+    def device_ids(self) -> list[int]:
         return [self._device_id] if self._device_id is not None else []
 
     def initialize(
-        self, attrs: Dict[int, Dict[str, Any]], conds: Dict[str, bool]
+        self, attrs: dict[int, dict[str, Any]], conds: dict[str, bool]
     ) -> bool:
         """Initialize condition based on current device attributes."""
         if self._device_id is not None and self._device_id in attrs:
@@ -133,27 +133,27 @@ class ParentCondition(EngineCondition):
     def __init__(
         self,
         identifier: str,
-        child_conditions: List[EngineCondition],
+        child_conditions: list[EngineCondition],
         require_all: bool = True,
     ):
         self._identifier = identifier
         self._child_conditions = child_conditions
         self._require_all = require_all
-        self._child_states: Dict[str, bool] = {}
+        self._child_states: dict[str, bool] = {}
 
     @property
     def identifier(self) -> str:
         return self._identifier
 
     @property
-    def subconditions(self) -> List[EngineCondition]:
+    def subconditions(self) -> list[EngineCondition]:
         return self._child_conditions
 
     def initialize(
-        self, attrs: Dict[int, Dict[str, Any]], conds: Dict[str, bool]
+        self, attrs: dict[int, dict[str, Any]], conds: dict[str, bool]
     ) -> bool:
         """Initialize based on child condition states."""
-        self._child_states = {cid: state for cid, state in conds.items()}
+        self._child_states = dict(conds)
         return self.evaluate()
 
     def evaluate(self) -> bool:
@@ -187,7 +187,7 @@ class AlwaysTrueCondition(EngineCondition):
         return self._identifier
 
     def initialize(
-        self, attrs: Dict[int, Dict[str, Any]], conds: Dict[str, bool]
+        self, attrs: dict[int, dict[str, Any]], conds: dict[str, bool]
     ) -> bool:
         return True
 
@@ -206,7 +206,7 @@ class AlwaysFalseCondition(EngineCondition):
         return self._identifier
 
     def initialize(
-        self, attrs: Dict[int, Dict[str, Any]], conds: Dict[str, bool]
+        self, attrs: dict[int, dict[str, Any]], conds: dict[str, bool]
     ) -> bool:
         return False
 
@@ -226,7 +226,7 @@ class ExceptionCondition(EngineCondition):
         return self._identifier
 
     def initialize(
-        self, attrs: Dict[int, Dict[str, Any]], conds: Dict[str, bool]
+        self, attrs: dict[int, dict[str, Any]], conds: dict[str, bool]
     ) -> bool:
         if not self._exception_on_evaluate:
             raise RuntimeError("Exception during initialization")
@@ -241,7 +241,9 @@ class ExceptionCondition(EngineCondition):
 class ConditionWithSubconditions(EngineCondition):
     """Condition that has subconditions for testing recursive removal."""
 
-    def __init__(self, identifier: str, subconditions: List[EngineCondition] = None):
+    def __init__(
+        self, identifier: str, subconditions: list[EngineCondition] | None = None
+    ):
         self._identifier = identifier
         self._subconditions = subconditions or []
 
@@ -250,11 +252,11 @@ class ConditionWithSubconditions(EngineCondition):
         return self._identifier
 
     @property
-    def subconditions(self) -> List[EngineCondition]:
+    def subconditions(self) -> list[EngineCondition]:
         return self._subconditions
 
     def initialize(
-        self, attrs: Dict[int, Dict[str, Any]], conds: Dict[str, bool]
+        self, attrs: dict[int, dict[str, Any]], conds: dict[str, bool]
     ) -> bool:
         return False
 

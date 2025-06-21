@@ -1,11 +1,14 @@
-import asyncio as aio
 from abc import ABC, abstractmethod
+import asyncio as aio
 from collections import deque
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
-from typing import Awaitable, Callable
+from typing import Any
 
+from audit.decorators import log_audit_event
 from hubitat import HubitatClient
 from models.api import HubitatDeviceEvent
+from models.audit import EventSubtype, EventType
 
 
 class EngineCondition(ABC):
@@ -38,13 +41,15 @@ class EngineCondition(ABC):
 
     def on_device_event(self, event: HubitatDeviceEvent):
         """Invoked when an event occurs for a relevant device."""
+        pass
 
     def on_condition_event(self, condition: "EngineCondition", triggered: bool):
         """Invoked when a subcondition changes state"""
+        pass
 
     @abstractmethod
     def initialize(
-        self, attrs: dict[int, dict[str, any]], conds: dict[str, bool]
+        self, attrs: dict[int, dict[str, Any]], conds: dict[str, bool]
     ) -> bool:
         """Invoked with the initial device attribute values and condition states.
 
@@ -163,7 +168,7 @@ class RuleEngine:
     # STATE UPDATES #
     #################
 
-    def _propagate_state_update(
+    async def _propagate_state_update(
         self, notifiers: list[ConditionNotifier]
     ) -> list[ConditionNotifier]:
         """Propagates the state update to any dependent conditions
@@ -185,6 +190,14 @@ class RuleEngine:
             # Update our tracking state if it has changed
             if new_state != current_state:
                 self._conditions[current_id] = (current, new_state)
+                # Audit the state change
+                await log_audit_event(
+                    EventType.EXECUTION_LIFECYCLE,
+                    EventSubtype.CONDITION_STATE_CHANGED,
+                    condition_id=current_id,
+                    previous_state=current_state,
+                    new_state=new_state,
+                )
 
             # Process dependencies
             if current_id in self._condition_deps:
@@ -199,12 +212,10 @@ class RuleEngine:
     async def _process_condition_change(self, impacted: list[ConditionNotifier]):
         """Processes a condition change"""
         # Get a snapshot of our existing state so we can see what changed
-        previous_state = {
-            cid: self._conditions[cid][1] for cid in self._conditions.keys()
-        }
+        previous_state = {cid: self._conditions[cid][1] for cid in self._conditions}
 
         # Propagate the state change to transitively impacted conditions
-        notifiers = self._propagate_state_update(impacted)
+        notifiers = await self._propagate_state_update(impacted)
 
         for notifier in notifiers:
             curr = self._conditions[notifier.condition.identifier][1]
@@ -228,19 +239,22 @@ class RuleEngine:
                 and notifier.condition.duration is not None
             ):
 
-                async def _notify_duration():
-                    # When the duration timer expires remove the condition, cancel the
-                    # timeout timer, and notify the event
-                    await self.remove_condition(notifier.condition)
-                    self._timer_service.cancel_timer(
-                        f"condition_timeout({notifier.condition.identifier})"
-                    )
-                    notifier.notify()
+                def _make_notify_duration(captured_notifier: ConditionNotifier):
+                    async def _notify_duration():
+                        # When the duration timer expires remove the condition, cancel the
+                        # timeout timer, and notify the event
+                        await self.remove_condition(captured_notifier.condition)
+                        self._timer_service.cancel_timer(
+                            f"condition_timeout({captured_notifier.condition.identifier})"
+                        )
+                        captured_notifier.notify()
+
+                    return _notify_duration
 
                 self._timer_service.start_timer(
                     f"condition_duration({notifier.condition.identifier})",
                     notifier.condition.duration,
-                    _notify_duration,
+                    _make_notify_duration(notifier),
                 )
                 return
 

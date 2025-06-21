@@ -84,6 +84,8 @@ ignore = [
     "E501",  # line too long (handled by formatter)
     "B008",  # do not perform function calls in argument defaults
     "B904",  # allow bare except in some contexts
+    "UP047", # Generic function should use type parameters (conflicts with mypy)
+    "B027",  # Empty method in abstract base class (we want default implementations)
 ]
 
 [tool.ruff.lint.isort]

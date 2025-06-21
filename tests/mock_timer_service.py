@@ -1,8 +1,7 @@
 """Mock timer service for testing time-based functionality without real delays."""
 
-import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
-from typing import Callable, Awaitable, Dict, Set
 
 
 class MockTimerService:
@@ -12,9 +11,9 @@ class MockTimerService:
     """
 
     def __init__(self):
-        self.active_timers: Dict[str, Callable[[str], Awaitable[None]]] = {}
-        self.cancelled_timers: Set[str] = set()
-        self.timer_durations: Dict[str, timedelta] = {}
+        self.active_timers: dict[str, Callable[[str], Awaitable[None]]] = {}
+        self.cancelled_timers: set[str] = set()
+        self.timer_durations: dict[str, timedelta] = {}
 
     async def start_timer(
         self,
