@@ -4,6 +4,9 @@ from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import timedelta
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -59,7 +62,7 @@ class TimerService:
             except aio.CancelledError:
                 break
             except Exception as e:
-                print(f"Error processing timer request: {e}")
+                logger.error(f"Error processing timer request: {e}", exc_info=True)
 
     async def _start_timer_internal(self, request: TimerRequest) -> None:
         """Internal method to start a timer with the given request."""

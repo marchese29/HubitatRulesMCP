@@ -1,0 +1,57 @@
+version: 1
+disable_existing_loggers: False
+formatters:
+  default:
+    format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  sparse:
+    format: '[%(levelname)s] - %(name)s - %(message)s'
+  sql_format:
+    format: '%(asctime)s - %(levelname)s - %(message)s'
+handlers:
+  console:
+    formatter: sparse
+    class: logging.StreamHandler
+    stream: ext://sys.stderr
+  webapp:
+    formatter: default
+    class: logging.handlers.RotatingFileHandler
+    filename: /tmp/hr_web.log
+    maxBytes: 10485760
+    backupCount: 0
+  sql_file:
+    formatter: sql_format
+    class: logging.handlers.RotatingFileHandler
+    filename: /tmp/hr_sql.log
+    maxBytes: 10485760
+    backupCount: 0
+loggers:
+  uvicorn.error:
+    level: INFO
+    handlers:
+      - webapp
+    propagate: no
+  uvicorn.access:
+    level: INFO
+    handlers:
+      - webapp
+    propagate: no
+  mcp:
+    level: INFO
+    handlers:
+      - console
+    propagate: no
+  lifecycle:
+    level: INFO
+    handlers:
+      - console
+    propagate: no
+  sqlalchemy.engine:
+    level: INFO
+    handlers:
+      - sql_file
+    propagate: no
+root:
+  level: DEBUG
+  handlers:
+    - webapp
+  propagate: no

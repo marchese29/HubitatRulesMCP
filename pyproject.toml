@@ -9,7 +9,9 @@ dependencies = [
     "fastmcp>=2.7.1",
     "httpx>=0.28.1",
     "pydantic>=2.11.7",
+    "pyyaml>=6.0.2",
     "sqlmodel>=0.0.24",
+    "types-pyyaml>=6.0.12.20250516",
 ]
 
 [dependency-groups]
@@ -80,6 +82,7 @@ select = [
     "UP",  # pyupgrade
     "N",   # pep8-naming
     "SIM", # flake8-simplify
+    "T",   # No print statements, use logging
 ]
 ignore = [
     "E501",  # line too long (handled by formatter)
@@ -88,6 +91,10 @@ ignore = [
     "UP047", # Generic function should use type parameters (conflicts with mypy)
     "B027",  # Empty method in abstract base class (we want default implementations)
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["T201"]  # Allow print statements in test files
+"run_tests.py" = ["T201"]   # Allow print statements in test runner
 
 [tool.ruff.lint.isort]
 known-first-party = ["hubitatrulesmcp"]

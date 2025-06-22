@@ -1,6 +1,9 @@
 import asyncio
+import contextlib
 from contextlib import asynccontextmanager
-import sys
+import json
+import logging
+import logging.config
 import time
 
 from fastapi import FastAPI
@@ -9,6 +12,7 @@ from sqlmodel import Session, SQLModel, create_engine, select
 from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse
 import uvicorn
+import yaml
 
 from audit import service as audit_service_module
 from audit.decorators import log_audit_event
@@ -31,6 +35,10 @@ from rules.handler import RuleHandler
 from scenes.manager import SceneManager
 from timing.timers import TimerService
 
+with open("log_config.yaml") as f:
+    config = yaml.safe_load(f.read())
+logging.config.dictConfig(config)
+
 # Common Resources
 he_client = HubitatClient()
 timer_service = TimerService()
@@ -42,6 +50,7 @@ scene_logic = SceneLogic(scene_manager)
 
 
 web_app = FastAPI()
+logger = logging.getLogger(__name__)
 
 
 @web_app.get("/")
@@ -92,6 +101,7 @@ async def receive_device_event(request: Request) -> JSONResponse:
     try:
         # Parse the JSON payload from Hubitat
         payload = await request.json()
+        logger.info(f"Received device event: {json.dumps(payload)}")
 
         # Create a HubitatDeviceEvent from the payload
         device_event = HubitatDeviceEvent(**payload)
@@ -100,15 +110,14 @@ async def receive_device_event(request: Request) -> JSONResponse:
         async def _on_processing_complete(task):
             try:
                 await task  # Wait for the task to complete and check for exceptions
-                print(
+                logger.info(
                     f"Processed device event: device_id={device_event.device_id}, "
                     f"attribute={device_event.attribute}, value={device_event.value}"
                 )
             except Exception as e:
-                print(
+                logger.error(
                     f"Error processing device event: device_id={device_event.device_id}, "
                     f"attribute={device_event.attribute}, error={str(e)}",
-                    file=sys.stderr,
                 )
 
         # Start device event processing as fire-and-forget
@@ -132,7 +141,7 @@ async def receive_device_event(request: Request) -> JSONResponse:
 
     except Exception as e:
         error_msg = f"Error parsing device event: {str(e)}"
-        print(error_msg, file=sys.stderr)
+        logger.error(error_msg, exc_info=True)
 
         return JSONResponse({"success": False, "error": error_msg}, status_code=400)
 
@@ -140,20 +149,21 @@ async def receive_device_event(request: Request) -> JSONResponse:
 @asynccontextmanager
 async def lifespan(fastmcp: FastMCP):
     """Handle startup and shutdown for the MCP server"""
-    print("Hubitat Rules MCP server starting up...")
+    lc_logger = logging.getLogger("lifecycle")
+    lc_logger.debug("Hubitat Rules MCP server starting up...")
 
     # Initialize and start audit service
-    print("Starting audit service...")
+    lc_logger.debug("Starting audit service...")
     audit_service_module.audit_service = AuditService(fastmcp.db_engine)  # type: ignore[attr-defined]
     audit_service_module.audit_service.start()
-    print("Audit service started")
+    lc_logger.debug("Audit service started")
 
-    print("Initiating TimerService")
+    lc_logger.debug("Initiating TimerService")
     timer_service.start()
-    print("TimerService started")
+    lc_logger.debug("TimerService started")
 
     # Load existing rules from the database
-    print("Re-installing rules from the database")
+    lc_logger.debug("Re-installing rules from the database")
     # TODO: Move this logic into the rule_logic file
     count = 0
     with Session(fastmcp.db_engine) as session:  # type: ignore[attr-defined]
@@ -162,10 +172,10 @@ async def lifespan(fastmcp: FastMCP):
             start_time = time.time()
 
             if rule.time_provider is not None:
-                print(f"Installing scheduled rule '{rule.name}'")
+                lc_logger.debug(f"Installing scheduled rule '{rule.name}'")
                 await rule_handler.install_scheduled_rule(rule, rule.name)
             else:
-                print(f"Installing triggered rule '{rule.name}'")
+                lc_logger.debug(f"Installing triggered rule '{rule.name}'")
                 await rule_handler.install_rule(rule, rule.name)
 
             # Log rule loading to audit with timing
@@ -178,30 +188,33 @@ async def lifespan(fastmcp: FastMCP):
                 success=True,
             )
     if count > 0:
-        print(f"Re-installed {count} rules from the database")
+        lc_logger.debug(f"Re-installed {count} rules from the database")
 
     # Load existing scenes from the database
-    print("Re-installing scenes from the database")
+    lc_logger.debug("Re-installing scenes from the database")
     scene_count = 0
     with Session(fastmcp.db_engine) as session:  # type: ignore[attr-defined]
         scene_count = await scene_logic.load_scenes_from_database(session)
     if scene_count > 0:
-        print(f"Re-installed {scene_count} scenes from the database")
+        lc_logger.debug(f"Re-installed {scene_count} scenes from the database")
 
     # Launch the web server
-    print("Starting webhook server")
+    lc_logger.debug("Starting webhook server")
     config = uvicorn.Config("main:web_app", host="0.0.0.0", port=8080)
     server = uvicorn.Server(config)
     web_app_task = asyncio.create_task(server.serve())
-    print("Webhook server started")
+    lc_logger.debug("Webhook server started")
 
+    lc_logger.info("Server initialization complete")
     yield  # Server runs here
 
     # Shutdown code - runs when server stops
-    print("Hubitat Rules MCP server shutting down...")
+    lc_logger.debug("Hubitat Rules MCP server shutting down...")
     try:
         web_app_task.cancel()
-        await web_app_task
+        with contextlib.suppress(asyncio.CancelledError):
+            await web_app_task
+        lc_logger.debug("Webhook server turned off")
 
         # Cancel all active rules first
         for rule_name in rule_handler.get_active_rules():
@@ -215,22 +228,49 @@ async def lifespan(fastmcp: FastMCP):
                     ).first()
                     if db_rule:
                         await rule_handler.uninstall_rule(db_rule, rule_name)
-                        print(f"Uninstalled rule: {rule_name}")
+                        lc_logger.debug(f"Uninstalled rule: {rule_name}")
                     else:
-                        print(f"Rule {rule_name} not found in database during shutdown")
+                        lc_logger.debug(
+                            f"Rule {rule_name} not found in database during shutdown"
+                        )
             except Exception as e:
-                print(f"Error uninstalling rule {rule_name}: {e}")
+                lc_logger.warning(
+                    f"Error uninstalling rule {rule_name}: {e}", exc_info=True
+                )
 
-        # Stop the timer service
-        await timer_service.stop()
-        print("Timer service stopped")
+        # Stop the timer service and cancel all active timers
+        with contextlib.suppress(asyncio.CancelledError):
+            # Cancel all active timers first
+            for timer_id in list(timer_service._timers.keys()):
+                timer_service.cancel_timer(timer_id)
+            # Then stop the service
+            await timer_service.stop()
+        lc_logger.debug("Timer service stopped")
 
         # Stop the audit service
         if audit_service_module.audit_service:
-            await audit_service_module.audit_service.stop()
-            print("Audit service stopped")
+            with contextlib.suppress(asyncio.CancelledError):
+                await audit_service_module.audit_service.stop()
+            lc_logger.debug("Audit service stopped")
+
+        # Cancel any remaining asyncio tasks to prevent hanging
+        current_task = asyncio.current_task()
+        pending_tasks = [
+            task
+            for task in asyncio.all_tasks()
+            if not task.done() and task is not current_task
+        ]
+
+        if pending_tasks:
+            lc_logger.debug(f"Cancelling {len(pending_tasks)} remaining tasks")
+            for task in pending_tasks:
+                task.cancel()
+
+            # Wait briefly for tasks to finish cancelling
+            await asyncio.gather(*pending_tasks, return_exceptions=True)
+
     except Exception as e:
-        print(f"Error during shutdown: {e}")
+        lc_logger.warning(f"Error during shutdown: {e}", exc_info=True)
 
 
 mcp = FastMCP(name="Hubitat Rules", lifespan=lifespan)
@@ -513,4 +553,4 @@ if __name__ == "__main__":
     try:
         mcp.run()
     except KeyboardInterrupt:
-        print("\nShutdown completed gracefully.")
+        logger.info("\nShutdown completed gracefully.")

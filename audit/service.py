@@ -1,11 +1,14 @@
 import asyncio
 from contextlib import suppress
 from datetime import datetime
+import logging
 
 from sqlalchemy import Engine
 from sqlmodel import Session
 
 from models.audit import AuditLog, EventSubtype, EventType
+
+logger = logging.getLogger(__name__)
 
 
 class AuditService:
@@ -53,7 +56,7 @@ class AuditService:
 
         except Exception as e:
             # Silently handle audit errors to avoid impacting main flow
-            print(f"Failed to enqueue audit entry: {e}")
+            logger.error(f"Failed to enqueue audit entry: {e}", exc_info=True)
 
     async def _audit_writer(self):
         """Background task to write audit entries to database"""
@@ -74,7 +77,7 @@ class AuditService:
                 continue
             except Exception as e:
                 # Log but don't crash - audit failures shouldn't impact main app
-                print(f"Audit write failed: {e}")
+                logger.error(f"Audit write failed: {e}", exc_info=True)
 
 
 # Global audit service instance - will be initialized in main.py

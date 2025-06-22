@@ -4,11 +4,14 @@ from contextvars import ContextVar
 from functools import wraps
 import inspect
 import json
+import logging
 import time
 from typing import Any, ParamSpec, TypeVar
 
 from audit.service import get_audit_service
 from models.audit import EventSubtype, EventType
+
+logger = logging.getLogger(__name__)
 
 # Type parameters for the audit_scope decorator
 P = ParamSpec("P")
@@ -213,7 +216,7 @@ async def log_audit_event(
             **explicit_fields,
         )
     except Exception as e:
-        print(f"Audit logging failed: {e}")
+        logger.error(f"Audit logging failed: {e}", exc_info=True)
 
 
 def log_audit_event_sync(event_type: EventType, event_subtype: EventSubtype, **context):

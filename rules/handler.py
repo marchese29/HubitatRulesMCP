@@ -3,6 +3,7 @@ from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from datetime import datetime, timedelta
 import inspect
+import logging
 
 from audit.decorators import audit_scope, log_audit_event
 from hubitat import HubitatClient
@@ -12,6 +13,8 @@ from rules.condition import AbstractCondition
 from rules.engine import RuleEngine
 from rules.interface import RuleUtilities
 from scenes.manager import SceneManager
+
+logger = logging.getLogger(__name__)
 
 RuleTriggerProvider = Callable[[RuleUtilities], Awaitable[AbstractCondition]]
 RuleRoutine = Callable[[RuleUtilities], Awaitable[None]]
@@ -262,7 +265,7 @@ class RuleHandler:
                         success=False,
                         error_message=str(e),
                     )
-                    print(f"Error executing rule: {e}")
+                    logger.error(f"Error executing rule: {e}", exc_info=True)
         except aio.CancelledError:
             # Cleanup when rule is cancelled
             with suppress(Exception):

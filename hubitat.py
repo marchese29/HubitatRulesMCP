@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 import httpx
@@ -6,6 +7,8 @@ from pydantic import BaseModel
 from audit.decorators import audit_scope
 from models.audit import EventSubtype, EventType
 from util import env_var
+
+logger = logging.getLogger(__name__)
 
 
 class HubitatDevice(BaseModel):
@@ -46,7 +49,7 @@ class HubitatClient:
                     f"status: {error.response.text}"
                 ) from error
             except Exception as error:
-                print(f"HE Client returned error: {error}")
+                logger.error(f"HE Client returned error: {error}", exc_info=True)
                 raise
 
         if resp.status_code != 200:
