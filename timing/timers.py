@@ -67,6 +67,9 @@ class TimerService:
     async def _start_timer_internal(self, request: TimerRequest) -> None:
         """Internal method to start a timer with the given request."""
         if request.id in self._timers:
+            logger.warning(
+                "Timer with name %s already existed, stopping it", request.id
+            )
             self.cancel_timer(request.id)
 
         async def timer_task() -> None:
@@ -75,8 +78,14 @@ class TimerService:
                 await request.callback(request.id)
             finally:
                 if request.id in self._timers:
+                    logger.debug("Removing timer %s now that it has fired", request.id)
                     del self._timers[request.id]
 
+        logger.info(
+            "Initiating timer for %f seconds with name '%s'",
+            request.duration.total_seconds(),
+            request.id,
+        )
         timer = Timer(
             id=request.id,
             duration=request.duration,

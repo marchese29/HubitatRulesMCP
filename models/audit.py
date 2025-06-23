@@ -24,8 +24,9 @@ class EventSubtype(str, Enum):
     RULE_DELETED = "rule_deleted"
 
     # Execution lifecycle events
-    CONDITION_STATE_CHANGED = "condition_state_changed"
+    CONDITION_NOW_TRUE = "condition_now_true"
     CONDITION_EVALUATED = "condition_evaluated"
+    CONDITION_TIMEOUT = "condition_timeout"
     TRIGGER_FIRED = "trigger_fired"
     RULE_ACTION_STARTED = "rule_action_started"
     RULE_ACTION_COMPLETED = "rule_action_completed"

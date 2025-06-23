@@ -6,6 +6,9 @@ from rules.engine import EngineCondition
 
 
 class AbstractCondition(EngineCondition):
+    def __init__(self):
+        super().__init__()
+
     def __bool__(self) -> bool:
         raise NotImplementedError("Use utils.check(<condition>) to evaluate conditions")
 
@@ -30,6 +33,7 @@ class AbstractCondition(EngineCondition):
 
 class AttributeChangeCondition(AbstractCondition):
     def __init__(self, device_id: int, attr_name: str):
+        super().__init__()
         self._device_id = device_id
         self._attr_name = attr_name
         self._prev_value = None
@@ -66,6 +70,7 @@ class AttributeChangeCondition(AbstractCondition):
 
 class BooleanCondition(AbstractCondition):
     def __init__(self, *conditions: AbstractCondition, operator: str):
+        super().__init__()
         self._conditions: dict[str, tuple[AbstractCondition, bool]] = {}
         for condition in conditions:
             self._conditions[condition.identifier] = (condition, False)
@@ -112,6 +117,7 @@ class DynamicDeviceAttributeCondition(AbstractCondition):
     """A condition for the comparison of a device attribute against another one"""
 
     def __init__(self, first: tuple[int, str], operator: str, second: tuple[int, str]):
+        super().__init__()
         self._left_device_id, self._left_attr_name = first
         self._right_device_id, self._right_attr_name = second
         self._operator = operator
@@ -187,6 +193,7 @@ class StaticDeviceAttributeCondition(AbstractCondition):
     """A condition for the comparison of a device attribute against a static value"""
 
     def __init__(self, device_id: int, attr_name: str, operator: str, value: Any):
+        super().__init__()
         self._device_id = device_id
         self._attr_name = attr_name
         self._device_value = None
@@ -270,6 +277,7 @@ class AlwaysFalseCondition(AbstractCondition):
     """A condition that is always false. Used for error cases."""
 
     def __init__(self, reason: str = "always_false"):
+        super().__init__()
         self._reason = reason
 
     @property
@@ -301,6 +309,7 @@ class SceneChangeCondition(AbstractCondition):
     """A condition that triggers when a scene state changes (set ↔ not set)."""
 
     def __init__(self, scene_name: str, scene_condition: AbstractCondition):
+        super().__init__()
         self._scene_name = scene_name
         self._scene_condition = scene_condition
         self._prev_state = False

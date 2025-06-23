@@ -51,8 +51,12 @@ class TestSimpleConditionScenarios:
         assert fired
 
         # Verify condition was auto-removed after firing
+        # Verify condition was removed from internal tracking
         with pytest.raises(KeyError):
-            engine.get_condition_state(condition)
+            engine._conditions[condition.instance_id]
+
+        # Verify graceful handling
+        assert engine.get_condition_state(condition) is False
 
     async def test_multiple_independent_conditions_different_devices(
         self, rule_engine_with_device_attrs
@@ -92,8 +96,12 @@ class TestSimpleConditionScenarios:
             await asyncio.wait_for(condition2_event.wait(), timeout=0.01)
 
         # Verify first condition was auto-removed, second still exists
+        # Verify condition was removed from internal tracking
         with pytest.raises(KeyError):
-            engine.get_condition_state(condition1)
+            engine._conditions[condition1.instance_id]
+
+        # Verify graceful handling
+        assert engine.get_condition_state(condition1) is False
         assert engine.get_condition_state(condition2) is False
 
         # Trigger event for second device
@@ -105,8 +113,12 @@ class TestSimpleConditionScenarios:
         assert fired2
 
         # Both conditions should now be auto-removed
+        # Verify condition was removed from internal tracking
         with pytest.raises(KeyError):
-            engine.get_condition_state(condition2)
+            engine._conditions[condition2.instance_id]
+
+        # Verify graceful handling
+        assert engine.get_condition_state(condition2) is False
 
     async def test_multiple_conditions_same_device(self, rule_engine_with_device_attrs):
         """Test: Multiple conditions on same device"""
@@ -140,8 +152,12 @@ class TestSimpleConditionScenarios:
             await asyncio.wait_for(condition2_event.wait(), timeout=0.01)
 
         # Switch condition auto-removed, level condition still exists
+        # Verify condition was removed from internal tracking
         with pytest.raises(KeyError):
-            engine.get_condition_state(condition1)
+            engine._conditions[condition1.instance_id]
+
+        # Verify graceful handling
+        assert engine.get_condition_state(condition1) is False
         assert engine.get_condition_state(condition2) is False
 
         # Trigger level event - should affect remaining condition
@@ -153,8 +169,12 @@ class TestSimpleConditionScenarios:
         assert fired2
 
         # Level condition should now be auto-removed
+        # Verify condition was removed from internal tracking
         with pytest.raises(KeyError):
-            engine.get_condition_state(condition2)
+            engine._conditions[condition2.instance_id]
+
+        # Verify graceful handling
+        assert engine.get_condition_state(condition2) is False
 
     async def test_condition_state_tracking_before_firing(
         self, rule_engine_with_device_attrs
@@ -179,8 +199,12 @@ class TestSimpleConditionScenarios:
         fired = await asyncio.wait_for(condition_event.wait(), timeout=0.1)
         assert fired
 
+        # Verify condition was removed from internal tracking
         with pytest.raises(KeyError):
-            engine.get_condition_state(condition)
+            engine._conditions[condition.instance_id]
+
+        # Verify graceful handling
+        assert engine.get_condition_state(condition) is False
 
 
 class TestConditionLifecycle:
@@ -207,18 +231,24 @@ class TestConditionLifecycle:
         )
         condition_event = asyncio.Event()
 
-        # Add condition - this should fetch initial state and immediately fire
+        # Add condition - this should fetch initial state but NOT fire (no transition)
         await engine.add_condition(condition, condition_event)
 
         # Verify device state was fetched using bulk method
         mock_he_client.get_bulk_attributes.assert_called_once_with([789])
 
-        # Condition should have immediately fired and auto-removed
-        fired = await asyncio.wait_for(condition_event.wait(), timeout=0.1)
-        assert fired
+        # Condition should exist and be true, but should NOT have fired
+        assert engine.get_condition_state(condition) is True
 
-        with pytest.raises(KeyError):
-            engine.get_condition_state(condition)
+        # Event should NOT have fired (no transition occurred)
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(condition_event.wait(), timeout=0.01)
+
+        # Condition should still exist in engine
+        assert condition.instance_id in engine._conditions
+
+        # Clean up manually
+        await engine.remove_condition(condition)
 
     async def test_remove_condition_manually_with_cleanup_verification(
         self, rule_engine_with_device_attrs
@@ -241,13 +271,17 @@ class TestConditionLifecycle:
         await engine.remove_condition(condition)
 
         # Verify condition no longer exists
+        # Verify condition was removed from internal tracking
         with pytest.raises(KeyError):
-            engine.get_condition_state(condition)
+            engine._conditions[condition.instance_id]
+
+        # Verify graceful handling
+        assert engine.get_condition_state(condition) is False
 
         # Verify engine internal state is clean
-        assert condition.identifier not in engine._conditions
+        assert condition.instance_id not in engine._conditions
         assert not any(
-            condition.identifier in device_conditions
+            condition.instance_id in device_conditions
             for device_conditions in engine._device_to_conditions.values()
         )
 
@@ -277,8 +311,12 @@ class TestConditionLifecycle:
         assert fired
 
         # Verify condition was auto-removed
+        # Verify condition was removed from internal tracking
         with pytest.raises(KeyError):
-            engine.get_condition_state(condition)
+            engine._conditions[condition.instance_id]
+
+        # Verify graceful handling
+        assert engine.get_condition_state(condition) is False
 
     async def test_get_condition_state_for_active_vs_removed_conditions(
         self, rule_engine_with_device_attrs
@@ -314,8 +352,12 @@ class TestConditionLifecycle:
         assert engine.get_condition_state(condition1) is False
 
         # Removed condition should raise KeyError
+        # Verify condition was removed from internal tracking
         with pytest.raises(KeyError):
-            engine.get_condition_state(condition2)
+            engine._conditions[condition2.instance_id]
+
+        # Verify graceful handling
+        assert engine.get_condition_state(condition2) is False
 
 
 class TestDeviceEventProcessing:
@@ -398,8 +440,12 @@ class TestDeviceEventProcessing:
         assert fired
 
         # Condition should be auto-removed
+        # Verify condition was removed from internal tracking
         with pytest.raises(KeyError):
-            engine.get_condition_state(condition)
+            engine._conditions[condition.instance_id]
+
+        # Verify graceful handling
+        assert engine.get_condition_state(condition) is False
 
     async def test_events_for_non_tracked_devices_dont_affect_engine(
         self, rule_engine_with_device_attrs
@@ -465,7 +511,7 @@ class TestTimeoutBehavior:
         assert mock_timer_service.get_active_timer_count() > 0
 
         # Trigger the timeout manually using mock timer
-        timer_id = f"condition_timeout({condition.identifier})"
+        timer_id = f"condition_timeout({condition.instance_id})"
         await mock_timer_service.trigger_timer(timer_id)
 
         # Verify timeout event was fired
@@ -473,8 +519,12 @@ class TestTimeoutBehavior:
         assert fired
 
         # Condition should be auto-removed after timeout
+        # Verify condition was removed from internal tracking
         with pytest.raises(KeyError):
-            engine.get_condition_state(condition)
+            engine._conditions[condition.instance_id]
+
+        # Verify graceful handling
+        assert engine.get_condition_state(condition) is False
 
     async def test_timeout_cancelled_when_condition_becomes_true(
         self, rule_engine_with_device_attrs, mock_timer_service
@@ -524,20 +574,25 @@ class TestImmediateConditions:
         """Test: Condition that is immediately true when added"""
         engine = rule_engine_with_device_attrs
 
-        # Use AlwaysTrueCondition for immediate firing
+        # Use AlwaysTrueCondition - should be true but NOT fire (no transition)
         condition = AlwaysTrueCondition("immediate_true")
         condition_event = asyncio.Event()
 
-        # Add condition - should immediately fire and auto-remove
+        # Add condition - should be true but NOT fire (no transition occurred)
         await engine.add_condition(condition, condition_event)
 
-        # Verify condition fired immediately
-        fired = await asyncio.wait_for(condition_event.wait(), timeout=0.1)
-        assert fired
+        # Condition should exist and be true, but should NOT have fired
+        assert engine.get_condition_state(condition) is True
 
-        # Condition should be auto-removed
-        with pytest.raises(KeyError):
-            engine.get_condition_state(condition)
+        # Event should NOT have fired (no transition occurred)
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(condition_event.wait(), timeout=0.01)
+
+        # Condition should still exist in engine
+        assert condition.instance_id in engine._conditions
+
+        # Clean up manually
+        await engine.remove_condition(condition)
 
     async def test_condition_never_becomes_true(self, rule_engine_with_device_attrs):
         """Test: Condition that never becomes true (stays in engine until manually removed)"""
@@ -654,8 +709,12 @@ class TestEngineResourceManagement:
             assert fired
 
             # This condition should be removed
+            # Verify condition was removed from internal tracking
             with pytest.raises(KeyError):
-                engine.get_condition_state(condition)
+                engine._conditions[condition.instance_id]
+
+            # Verify graceful handling
+            assert engine.get_condition_state(condition) is False
 
             # Other conditions should still exist
             for j, other_condition in enumerate(conditions):

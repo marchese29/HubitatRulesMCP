@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from hubitat import HubitatClient
 from models.api import HubitatDeviceEvent
-from rules.engine import RuleEngine
+from rules.engine import ConditionState, RuleEngine
 from tests.mock_timer_service import MockTimerService
 
 
@@ -102,28 +102,36 @@ class ConditionStateChecker:
     def __init__(self, engine: RuleEngine) -> None:
         self.engine = engine
 
-    def verify_condition_exists(self, condition_id: str) -> bool:
+    def verify_condition_exists(self, condition_instance_id: int) -> bool:
         """Check if condition is tracked by engine."""
-        return condition_id in self.engine._conditions
+        return condition_instance_id in self.engine._conditions
 
-    def verify_condition_state(self, condition_id: str, expected_state: bool) -> bool:
+    def verify_condition_state(
+        self, condition_instance_id: int, expected_state: bool
+    ) -> bool:
         """Check if condition has expected state."""
-        if condition_id not in self.engine._conditions:
+        if condition_instance_id not in self.engine._conditions:
             return False
-        return self.engine._conditions[condition_id][1] == expected_state
+        # Convert boolean to ConditionState for comparison
+        expected_enum_state = (
+            ConditionState.TRUE if expected_state else ConditionState.FALSE
+        )
+        return self.engine._conditions[condition_instance_id][1] == expected_enum_state
 
-    def verify_device_mapping(self, device_id: int, condition_id: str) -> bool:
+    def verify_device_mapping(self, device_id: int, condition_instance_id: int) -> bool:
         """Check if device is mapped to condition."""
         if device_id not in self.engine._device_to_conditions:
             return False
-        return condition_id in self.engine._device_to_conditions[device_id]
+        return condition_instance_id in self.engine._device_to_conditions[device_id]
 
-    def verify_condition_dependency(self, parent_id: str, child_id: str) -> bool:
+    def verify_condition_dependency(
+        self, parent_instance_id: int, child_instance_id: int
+    ) -> bool:
         """Check if condition dependency exists."""
-        if child_id not in self.engine._condition_deps:
+        if child_instance_id not in self.engine._condition_deps:
             return False
-        dep_set = self.engine._condition_deps[child_id]
-        return bool(parent_id in dep_set)
+        dep_set = self.engine._condition_deps[child_instance_id]
+        return bool(parent_instance_id in dep_set)
 
     def get_active_condition_count(self) -> int:
         """Get number of active conditions."""

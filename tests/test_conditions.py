@@ -18,6 +18,7 @@ class SimpleCondition(EngineCondition):
         expected_value: Any = "on",
         initial_state: bool = False,
     ):
+        super().__init__()
         self._identifier = identifier
         self._device_id = device_id
         self._attribute = attribute
@@ -136,6 +137,7 @@ class ParentCondition(EngineCondition):
         child_conditions: list[EngineCondition],
         require_all: bool = True,
     ):
+        super().__init__()
         self._identifier = identifier
         self._child_conditions = child_conditions
         self._require_all = require_all
@@ -180,6 +182,7 @@ class AlwaysTrueCondition(EngineCondition):
     """Condition that is always true for testing immediate triggers."""
 
     def __init__(self, identifier: str):
+        super().__init__()
         self._identifier = identifier
 
     @property
@@ -199,6 +202,7 @@ class AlwaysFalseCondition(EngineCondition):
     """Condition that is always false for testing timeout scenarios."""
 
     def __init__(self, identifier: str):
+        super().__init__()
         self._identifier = identifier
 
     @property
@@ -218,6 +222,7 @@ class ExceptionCondition(EngineCondition):
     """Condition that raises exceptions for testing error handling."""
 
     def __init__(self, identifier: str, exception_on_evaluate: bool = True):
+        super().__init__()
         self._identifier = identifier
         self._exception_on_evaluate = exception_on_evaluate
 
@@ -244,6 +249,7 @@ class ConditionWithSubconditions(EngineCondition):
     def __init__(
         self, identifier: str, subconditions: list[EngineCondition] | None = None
     ):
+        super().__init__()
         self._identifier = identifier
         self._subconditions = subconditions or []
 
