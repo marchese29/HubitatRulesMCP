@@ -86,3 +86,42 @@ class RuleInfo(BaseModel):
     trigger_code: str
     action_code: str
     is_active: bool
+
+
+# Audit Tool Models
+class PaginationInfo(BaseModel):
+    """Pagination metadata"""
+
+    page: int
+    page_size: int
+    total_pages: int
+    total_records: int
+    has_next: bool
+    has_prev: bool
+
+
+class RuleExecutionData(BaseModel):
+    """Data structure for rule execution analysis"""
+
+    formatted_data: list[dict[str, Any]]
+    total_executions: int
+    successful_executions: int
+    failed_executions: int
+
+
+class AuditLogQueryResponse(BaseModel):
+    """Response for audit log queries with pagination"""
+
+    data: list[dict[str, Any]]
+    pagination: PaginationInfo
+
+
+class RuleSummaryResponse(BaseModel):
+    """Response for rule execution summary analysis"""
+
+    analysis: str
+    rule_name: str | None
+    date_range: str
+    total_executions: int
+    successful_executions: int
+    failed_executions: int

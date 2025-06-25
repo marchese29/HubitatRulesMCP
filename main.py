@@ -1,13 +1,18 @@
 import asyncio
 import contextlib
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 import json
 import logging
 import logging.config
+import os
+import sys
 import time
+from typing import Annotated
 
 from fastapi import FastAPI
 from fastmcp import Context, FastMCP
+from pydantic import Field
 from sqlmodel import Session, SQLModel, create_engine, select
 from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse
@@ -18,12 +23,16 @@ from audit import service as audit_service_module
 from audit.decorators import log_audit_event
 from audit.service import AuditService
 from hubitat import HubitatClient
+from logic.audit_logic import AuditLogic
 from logic.rule_logic import RuleLogic
 from logic.scene_logic import SceneLogic
 from models.api import (
+    AuditLogQueryResponse,
     DeviceStateRequirement,
     HubitatDeviceEvent,
+    PaginationInfo,
     RuleInfo,
+    RuleSummaryResponse,
     Scene,
     SceneSetResponse,
     SceneWithStatus,
@@ -39,6 +48,9 @@ with open("log_config.yaml") as f:
     config = yaml.safe_load(f.read())
 logging.config.dictConfig(config)
 
+# Audit tools flag detection
+AUDIT_TOOLS_ENABLED = "--audit-tools" in sys.argv or "-a" in sys.argv
+
 # Common Resources
 he_client = HubitatClient()
 timer_service = TimerService()
@@ -48,6 +60,10 @@ rule_handler = RuleHandler(rule_engine, he_client, scene_manager)
 rule_logic = RuleLogic(rule_handler)
 scene_logic = SceneLogic(scene_manager)
 
+# Conditional audit logic - only instantiate if audit tools are enabled
+if AUDIT_TOOLS_ENABLED:
+    audit_logic = AuditLogic()
+
 
 web_app = FastAPI()
 logger = logging.getLogger(__name__)
@@ -55,7 +71,15 @@ logger = logging.getLogger(__name__)
 
 @web_app.get("/")
 async def server_info(_: Request) -> PlainTextResponse:
-    info = """Hubitat Rules MCP Server
+    audit_status = "ENABLED" if AUDIT_TOOLS_ENABLED else "DISABLED"
+    audit_tools_info = ""
+
+    if AUDIT_TOOLS_ENABLED:
+        audit_tools_info = """
+• query_audit_logs - Query and filter audit logs with pagination
+• get_rule_summary - AI-powered rule execution pattern analysis"""
+
+    info = f"""Hubitat Rules MCP Server
 
 This Model Context Protocol (MCP) server provides automation rule management and scene control for Hubitat home automation systems.
 
@@ -66,6 +90,7 @@ Features:
 • Real-time device state monitoring and triggers
 • Timer-based scheduling with cron support
 • Python-based rule programming with full API access
+• Comprehensive audit logging and analytics (Status: {audit_status})
 
 Available Tools:
 • install_rule - Create new automation rules (condition or scheduled)
@@ -74,12 +99,14 @@ Available Tools:
 • get_scenes - List scenes with optional filtering and current status
 • create_scene - Create new scenes with device state requirements
 • delete_scene - Remove scenes and get their definitions
-• set_scene - Apply scenes by sending commands to devices
+• set_scene - Apply scenes by sending commands to devices{audit_tools_info}
 
 Available Resources:
 • rulesengine://programming-guide - Comprehensive rule programming documentation
 
 The server integrates with your Hubitat hub to provide powerful, flexible automation capabilities through Python scripting and scene management.
+
+Audit Tools: Use --audit-tools or -a flag when starting to enable advanced monitoring and AI-powered analysis tools.
 """
     return PlainTextResponse(info)
 
@@ -293,8 +320,6 @@ async def get_programming_guide() -> str:
     Essential context for LLMs to understand how to write effective
     Python automation rules using this Hubitat Rules MCP server.
     """
-    import os
-
     try:
         # Get the directory where main.py is located
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -547,6 +572,182 @@ async def set_scene(name: str, ctx: Context) -> SceneSetResponse:
         error_msg = f"Error setting scene '{name}': {str(e)}"
         await ctx.error(error_msg)
         raise RuntimeError(error_msg)
+
+
+# Conditional Audit Tools - only available with --audit-tools flag
+if AUDIT_TOOLS_ENABLED:
+
+    @mcp.tool()
+    async def query_audit_logs(
+        ctx: Context,
+        event_type: str | None = None,
+        event_subtype: str | None = None,
+        rule_name: str | None = None,
+        scene_name: str | None = None,
+        device_id: int | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        page: int = 1,
+        page_size: Annotated[int, Field(ge=1, le=200)] = 50,
+    ) -> AuditLogQueryResponse:
+        """Query audit logs with filtering and pagination.
+
+        Args:
+            event_type: Filter by event type (e.g., 'rule_lifecycle', 'execution_lifecycle')
+            event_subtype: Filter by event subtype (e.g., 'rule_created', 'condition_evaluated')
+            rule_name: Filter by specific rule name
+            scene_name: Filter by specific scene name
+            device_id: Filter by device ID
+            start_date: Start date filter (ISO format, e.g., '2024-01-01T00:00:00')
+            end_date: End date filter (ISO format, e.g., '2024-01-31T23:59:59')
+            page: Page number (starts at 1)
+            page_size: Number of results per page (1-200)
+
+        Returns:
+            AuditLogQueryResponse with audit log entries and pagination info
+        """
+        await ctx.info(f"Querying audit logs - page {page}, size {page_size}")
+
+        try:
+            result = await audit_logic.query_audit_logs(
+                event_type=event_type,
+                event_subtype=event_subtype,
+                rule_name=rule_name,
+                scene_name=scene_name,
+                device_id=device_id,
+                start_date=start_date,
+                end_date=end_date,
+                page=page,
+                page_size=page_size,
+            )
+
+            await ctx.info(
+                f"Found {result.pagination.total_records} audit logs, returning page {page} "
+                f"of {result.pagination.total_pages}"
+            )
+
+            return result
+
+        except Exception as e:
+            error_msg = f"Error querying audit logs: {str(e)}"
+            await ctx.error(error_msg)
+            return AuditLogQueryResponse(
+                data=[],
+                pagination=PaginationInfo(
+                    page=page,
+                    page_size=page_size,
+                    total_pages=0,
+                    total_records=0,
+                    has_next=False,
+                    has_prev=False,
+                ),
+            )
+
+    @mcp.tool()
+    async def get_rule_summary(
+        ctx: Context,
+        rule_name: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        include_successful: bool = True,
+        include_failed: bool = True,
+    ) -> RuleSummaryResponse:
+        """Get intelligent analysis of rule execution patterns using LLM sampling.
+
+        Args:
+            rule_name: Specific rule to analyze (if None, analyzes all rules)
+            start_date: Start date for analysis (ISO format, defaults to 7 days ago)
+            end_date: End date for analysis (ISO format, defaults to now)
+            include_successful: Include successful executions in analysis
+            include_failed: Include failed executions in analysis
+
+        Returns:
+            Intelligent analysis of rule execution patterns
+        """
+        # Set default date range if not provided
+        if not start_date:
+            start_dt = datetime.now() - timedelta(days=7)
+            start_date = start_dt.isoformat()
+        else:
+            start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+
+        if not end_date:
+            end_dt = datetime.now()
+            end_date = end_dt.isoformat()
+        else:
+            end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+
+        await ctx.info(f"Analyzing rule executions from {start_date} to {end_date}")
+
+        try:
+            # Get execution data from audit logic (this is transactional)
+            execution_data = await audit_logic.get_rule_execution_data(
+                rule_name=rule_name,
+                start_date=start_date,
+                end_date=end_date,
+                include_successful=include_successful,
+                include_failed=include_failed,
+            )
+
+            await ctx.info(
+                f"Found {execution_data.total_executions} rule executions for analysis"
+            )
+
+            if execution_data.total_executions == 0:
+                return RuleSummaryResponse(
+                    analysis="No rule executions found in the specified date range and "
+                    "criteria.",
+                    rule_name=rule_name,
+                    date_range=f"{start_date} to {end_date}",
+                    total_executions=0,
+                    successful_executions=0,
+                    failed_executions=0,
+                )
+
+            # Format the data summary (outside transaction)
+            data_summary = audit_logic.format_rule_execution_summary(
+                execution_data=execution_data,
+                rule_name=rule_name,
+                start_date=start_date,
+                end_date=end_date,
+            )
+
+            # Load prompt template from file
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            prompt_path = os.path.join(script_dir, "rule_summary_prompt.txt")
+
+            try:
+                with open(prompt_path, encoding="utf-8") as f:
+                    prompt_template = f.read()
+            except FileNotFoundError:
+                prompt_template = "Analyze these home automation rule executions and "
+                "provide insights about patterns, performance issues, error trends, and "
+                "actionable recommendations:\n\n{data_summary}"
+
+            # Request LLM analysis (outside transaction)
+            full_prompt = prompt_template.format(data_summary=data_summary)
+            analysis = await ctx.sample(full_prompt)
+
+            return RuleSummaryResponse(
+                analysis=analysis.text if hasattr(analysis, "text") else str(analysis),
+                rule_name=rule_name,
+                date_range=f"{start_date} to {end_date}",
+                total_executions=execution_data.total_executions,
+                successful_executions=execution_data.successful_executions,
+                failed_executions=execution_data.failed_executions,
+            )
+
+        except Exception as e:
+            error_msg = f"Error analyzing rule executions: {str(e)}"
+            await ctx.error(error_msg)
+            return RuleSummaryResponse(
+                analysis=f"Error during analysis: {error_msg}",
+                rule_name=rule_name,
+                date_range=f"{start_date} to {end_date}",
+                total_executions=0,
+                successful_executions=0,
+                failed_executions=0,
+            )
 
 
 if __name__ == "__main__":

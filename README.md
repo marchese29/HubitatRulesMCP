@@ -11,6 +11,7 @@ A powerful Model Context Protocol (MCP) server that provides automation rule man
 - **📅 Flexible Scheduling**: Timer-based automation with cron-like capabilities
 - **🔌 MCP Integration**: Standard Model Context Protocol interface for AI assistant integration
 - **📚 Comprehensive Documentation**: Built-in programming guide and examples
+- **📊 Audit & Analytics** *(Optional)*: Advanced audit logging and AI-powered rule execution analysis
 
 ## Architecture Overview
 
@@ -76,7 +77,13 @@ A powerful Model Context Protocol (MCP) server that provides automation rule man
 
 4. **Start the server**:
    ```bash
-   uv run fastmcp run --transport streamable-http --host 0.0.0.0 --port 8080
+   # Standard mode
+   uv run fastmcp run main.py
+   
+   # With audit tools enabled
+   uv run python main.py --audit-tools
+   # or
+   uv run python main.py -a
    ```
 
 ### Hubitat Configuration
@@ -140,6 +147,92 @@ The `utils` object provides:
 - **Conditions**: `utils.all_of()`, `utils.any_of()`, `utils.is_not()` - Boolean logic
 - **Timing**: `utils.wait()`, `utils.wait_until()`, `utils.wait_for()` - Delays and waits
 - **Monitoring**: `utils.on_change()`, `utils.check()` - Attribute monitoring
+
+## Audit Tools (Optional)
+
+The server includes optional audit tools that provide advanced monitoring and analysis capabilities for your automation rules. These tools are only available when the server is started with the `--audit-tools` or `-a` flag.
+
+### Enabling Audit Tools
+
+```bash
+# Start server with audit tools enabled
+uv run python main.py --audit-tools
+# or
+uv run python main.py -a
+```
+
+### Available Audit Tools
+
+#### `query_audit_logs`
+Query and filter audit logs with pagination support:
+
+```python
+# Query all audit logs
+logs = await query_audit_logs()
+
+# Filter by specific rule
+logs = await query_audit_logs(rule_name="motion_lights")
+
+# Filter by event type and date range
+logs = await query_audit_logs(
+    event_type="execution_lifecycle",
+    start_date="2024-01-01T00:00:00",
+    end_date="2024-01-31T23:59:59",
+    page=1,
+    page_size=100
+)
+```
+
+#### `get_rule_summary`
+AI-powered analysis of rule execution patterns and performance:
+
+```python
+# Analyze all rules from the last 7 days
+summary = await get_rule_summary()
+
+# Analyze specific rule with custom date range
+summary = await get_rule_summary(
+    rule_name="motion_lights",
+    start_date="2024-01-01T00:00:00",
+    end_date="2024-01-31T23:59:59"
+)
+
+# Focus only on failed executions
+summary = await get_rule_summary(
+    include_successful=False,
+    include_failed=True
+)
+```
+
+### What Gets Audited
+
+The audit system automatically logs:
+
+- **Rule Lifecycle Events**: Installation, uninstallation, loading
+- **Rule Execution**: Success/failure, execution time, error details
+- **Condition Evaluations**: When conditions are checked and their results
+- **Scene Operations**: Scene creation, deletion, activation
+- **Device Commands**: Commands sent to devices with results
+
+### Analysis Features
+
+The AI-powered `get_rule_summary` tool provides:
+
+- **Performance Analysis**: Execution time trends and optimization suggestions
+- **Error Pattern Detection**: Common failure modes and troubleshooting advice
+- **Usage Statistics**: Frequency analysis and activity patterns
+- **Actionable Recommendations**: Specific suggestions for improving reliability
+
+### Audit Data Structure
+
+Audit logs include:
+- **Timestamp**: When the event occurred
+- **Event Type**: Category of event (rule_lifecycle, execution_lifecycle, etc.)
+- **Event Subtype**: Specific event (rule_created, condition_evaluated, etc.)
+- **Success Status**: Whether the operation succeeded
+- **Execution Time**: How long the operation took (when applicable)
+- **Context**: Rule name, scene name, device ID, etc.
+- **Error Details**: Full error messages for failed operations
 
 ## Development
 
@@ -219,6 +312,8 @@ uv run fastmcp run --transport streamable-http --host 0.0.0.0 --port 8080
 
 ### MCP Tools
 
+#### Core Tools
+
 | Tool | Description | Parameters |
 |------|-------------|------------|
 | `install_rule` | Install automation rule | `name`, `rule_type`, `trigger_code`, `action_code` |
@@ -228,6 +323,13 @@ uv run fastmcp run --transport streamable-http --host 0.0.0.0 --port 8080
 | `delete_scene` | Remove scene | `name` |
 | `get_scenes` | List scenes with status | `name?`, `device_id?` |
 | `set_scene` | Apply/activate scene | `name` |
+
+#### Audit Tools (with --audit-tools flag)
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `query_audit_logs` | Query audit logs with filtering | `event_type?`, `event_subtype?`, `rule_name?`, `scene_name?`, `device_id?`, `start_date?`, `end_date?`, `page?`, `page_size?` |
+| `get_rule_summary` | AI-powered rule execution analysis | `rule_name?`, `start_date?`, `end_date?`, `include_successful?`, `include_failed?` |
 
 ### MCP Resources
 

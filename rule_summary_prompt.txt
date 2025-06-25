@@ -1,0 +1,13 @@
+Analyze these home automation rule executions and provide insights about patterns, performance issues, error trends, and actionable recommendations. Focus on identifying any concerning patterns or optimization opportunities.
+
+Please provide:
+1. **Overall Health Assessment**: Is the system performing well?
+2. **Performance Patterns**: Any concerning execution times or patterns?
+3. **Error Analysis**: What types of errors are occurring and their frequency?
+4. **Optimization Opportunities**: Specific recommendations for improvement
+5. **Risk Assessment**: Any patterns that could indicate system instability?
+
+Be specific and actionable in your recommendations. If you see concerning trends, explain what they might indicate and suggest concrete steps to address them.
+
+Data to analyze:
+{data_summary}
