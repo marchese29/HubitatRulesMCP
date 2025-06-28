@@ -44,9 +44,11 @@ from rules.handler import RuleHandler
 from scenes.manager import SceneManager
 from timing.timers import TimerService
 
-with open("log_config.yaml") as f:
-    config = yaml.safe_load(f.read())
-logging.config.dictConfig(config)
+current_dir = os.path.dirname(os.path.abspath(__file__))
+log_config_path = os.path.join(current_dir, "log_config.yaml")
+with open(log_config_path) as f:
+    log_config = yaml.safe_load(f.read())
+logging.config.dictConfig(log_config)
 
 # Audit tools flag detection
 AUDIT_TOOLS_ENABLED = "--audit-tools" in sys.argv or "-a" in sys.argv
@@ -305,7 +307,8 @@ mcp.db_engine = create_engine("sqlite:///rulesdb.db")  # type: ignore[attr-defin
 SQLModel.metadata.create_all(mcp.db_engine)  # type: ignore[attr-defined]
 
 
-@mcp.resource("rulesengine://programming-guide")
+# @mcp.resource("rulesengine://programming-guide")
+@mcp.tool()
 async def get_programming_guide() -> str:
     """Comprehensive programming guide for writing Hubitat automation rules.
 
