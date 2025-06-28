@@ -6,6 +6,7 @@ import json
 import logging
 import logging.config
 import os
+from pathlib import Path
 import sys
 import time
 from typing import Annotated
@@ -303,7 +304,9 @@ async def lifespan(fastmcp: FastMCP):
 
 
 mcp = FastMCP(name="Hubitat Rules", lifespan=lifespan)
-mcp.db_engine = create_engine("sqlite:///rulesdb.db")  # type: ignore[attr-defined]
+script_dir = Path(__file__).parent.absolute()
+db_location = script_dir / "rules.db"
+mcp.db_engine = create_engine(f"sqlite:///{db_location}")  # type: ignore[attr-defined]
 SQLModel.metadata.create_all(mcp.db_engine)  # type: ignore[attr-defined]
 
 
