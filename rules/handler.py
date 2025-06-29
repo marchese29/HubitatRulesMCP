@@ -77,6 +77,18 @@ class RuleHandler:
                 ),
                 name=f"rule:{rule.name}",
             )
+
+            # Give the task a moment to start and potentially fail
+            await aio.sleep(1.0)
+            if task.done() and not task.cancelled():
+                # Task completed unexpectedly - check for exception
+                try:
+                    task.result()  # This will raise any stored exception
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Rule task '{rule.name}' failed to start: {e}"
+                    ) from e
+
             self._active_rules[rule.name] = task
 
         except Exception as e:
@@ -117,6 +129,18 @@ class RuleHandler:
                 self._run_scheduled_rule(timer_function, rule_function, rule.name),
                 name=f"scheduled_rule:{rule.name}",
             )
+
+            # Give the task a moment to start and potentially fail
+            await aio.sleep(1.0)
+            if task.done() and not task.cancelled():
+                # Task completed unexpectedly - check for exception
+                try:
+                    task.result()  # This will raise any stored exception
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Scheduled rule task '{rule.name}' failed to start: {e}"
+                    ) from e
+
             self._active_rules[rule.name] = task
 
         except Exception as e:
@@ -234,11 +258,16 @@ class RuleHandler:
         self, trigger: AbstractCondition, action: RuleRoutine, rule_name: str
     ):
         """Run a rule repeatedly when its trigger condition becomes true."""
+        import logging
+
+        logger = logging.getLogger(f"rule_task.{rule_name}")
+
         try:
             while True:
                 # Check for cancellation FIRST - before making any API calls
                 current_task = aio.current_task()
                 if current_task and current_task.cancelled():
+                    logger.debug(f"Rule task '{rule_name}' cancelled, exiting")
                     break
 
                 # Wait for the condition to be true
@@ -288,6 +317,13 @@ class RuleHandler:
             # Cleanup when rule is cancelled
             with suppress(Exception):
                 await self._rule_engine.remove_condition(trigger)
+            raise
+        except Exception as e:
+            # Log any other rule task failures
+            logger.error(
+                f"Rule task '{rule_name}' failed with unexpected error: {e}",
+                exc_info=True,
+            )
             raise
 
     @audit_scope(rule_name="rule_name")

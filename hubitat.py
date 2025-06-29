@@ -160,7 +160,12 @@ class HubitatClient:
                         current_attributes[attr_name] = attr_value
 
             # Convert commands to a set of strings
-            commands = set(device_data.get("commands", []))
+            # Commands come as array of objects like [{"command": "on"}, {"command": "off"}]
+            commands = set()
+            commands_data = device_data.get("commands", [])
+            for cmd_data in commands_data:
+                if isinstance(cmd_data, dict) and "command" in cmd_data:
+                    commands.add(cmd_data["command"])
 
             # Create HubitatDevice object
             device = HubitatDevice(
