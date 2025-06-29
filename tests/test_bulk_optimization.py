@@ -24,25 +24,29 @@ class TestBulkOptimization:
         """Test that get_all_devices returns HubitatDevice objects with current attributes."""
         from hubitat import HubitatDevice
 
-        # Mock the API response
+        # Mock the API response with the actual Hubitat API format
         mock_response = MagicMock()
         mock_response.json.return_value = [
             {
                 "id": "123",
                 "name": "Living Room Switch",
-                "attributes": [
-                    {"name": "switch", "currentValue": "on"},
-                    {"name": "level", "currentValue": 75},
-                ],
+                "attributes": {
+                    "switch": "on",
+                    "level": 75,
+                    "dataType": "ENUM",
+                    "values": ["on", "off"],
+                },
                 "commands": ["on", "off", "setLevel"],
             },
             {
                 "id": "456",
                 "name": "Motion Sensor",
-                "attributes": [
-                    {"name": "motion", "currentValue": "active"},
-                    {"name": "battery", "currentValue": 85},
-                ],
+                "attributes": {
+                    "motion": "active",
+                    "battery": 85,
+                    "dataType": "ENUM",
+                    "values": ["active", "inactive"],
+                },
                 "commands": [],
             },
         ]
@@ -83,25 +87,29 @@ class TestBulkOptimization:
 
     async def test_get_bulk_attributes_efficiency(self, mock_hubitat_client):
         """Test that get_bulk_attributes uses bulk endpoint for efficiency."""
-        # Mock the bulk API response
+        # Mock the bulk API response with actual Hubitat format
         mock_response = MagicMock()
         mock_response.json.return_value = [
             {
                 "id": "123",
                 "name": "Switch 1",
-                "attributes": [
-                    {"name": "switch", "currentValue": "on"},
-                    {"name": "level", "currentValue": 50},
-                ],
+                "attributes": {
+                    "switch": "on",
+                    "level": 50,
+                    "dataType": "ENUM",
+                    "values": ["on", "off"],
+                },
                 "commands": ["on", "off"],
             },
             {
                 "id": "456",
                 "name": "Switch 2",
-                "attributes": [
-                    {"name": "switch", "currentValue": "off"},
-                    {"name": "level", "currentValue": 0},
-                ],
+                "attributes": {
+                    "switch": "off",
+                    "level": 0,
+                    "dataType": "ENUM",
+                    "values": ["on", "off"],
+                },
                 "commands": ["on", "off"],
             },
         ]
@@ -132,18 +140,22 @@ class TestBulkOptimization:
         self, mock_hubitat_client
     ):
         """Test that get_bulk_attributes falls back to individual calls for missing devices."""
-        # Mock bulk response missing one device
+        # Mock bulk response missing one device (using actual API format)
         mock_bulk_response = MagicMock()
         mock_bulk_response.json.return_value = [
             {
                 "id": "123",
                 "name": "Switch 1",
-                "attributes": [{"name": "switch", "currentValue": "on"}],
+                "attributes": {
+                    "switch": "on",
+                    "dataType": "ENUM",
+                    "values": ["on", "off"],
+                },
                 "commands": [],
             }
         ]
 
-        # Mock individual device response
+        # Mock individual device response (this uses the individual device API format)
         mock_individual_response = MagicMock()
         mock_individual_response.json.return_value = {
             "id": "456",

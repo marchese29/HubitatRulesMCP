@@ -51,8 +51,8 @@ class RuleLogic:
     )
     async def uninstall_rule(self, session: Session, name: str) -> DBRule:
         rule = session.exec(select(DBRule).where(DBRule.name == name)).one()
-        session.delete(rule)
         await self._rule_handler.uninstall_rule(rule, rule.name)
+        session.delete(rule)
         return rule
 
     @transactional

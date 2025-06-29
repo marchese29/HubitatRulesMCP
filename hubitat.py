@@ -143,13 +143,21 @@ class HubitatClient:
         # Convert to list of HubitatDevice objects
         devices = []
         for device_data in data:
-            # Extract attribute names as strings
+            # Extract attribute names and current values from the /devices/all format
             attributes = set()
             current_attributes = {}
-            for attr_data in device_data.get("attributes", []):
-                attr_name = attr_data["name"]
-                attributes.add(attr_name)
-                current_attributes[attr_name] = attr_data["currentValue"]
+
+            # The /devices/all endpoint returns attributes as a flat dict where:
+            # - Keys are attribute names (e.g., "temperature", "humidity")
+            # - Values are current values (e.g., "68.85", "48")
+            # - Plus metadata fields like "dataType" and "values"
+            attrs_data = device_data.get("attributes", {})
+            if isinstance(attrs_data, dict):
+                for attr_name, attr_value in attrs_data.items():
+                    # Skip metadata fields like "dataType" and "values"
+                    if attr_name not in ["dataType", "values"]:
+                        attributes.add(attr_name)
+                        current_attributes[attr_name] = attr_value
 
             # Convert commands to a set of strings
             commands = set(device_data.get("commands", []))

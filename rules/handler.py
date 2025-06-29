@@ -139,8 +139,21 @@ class RuleHandler:
         task = self._active_rules[rule.name]
         task.cancel()
 
-        with suppress(aio.CancelledError):
-            await task
+        # Wait for the task to finish cleanly with a timeout
+        try:
+            await aio.wait_for(task, timeout=5.0)
+        except TimeoutError:
+            # Task didn't respond to cancellation within timeout
+            # Log a warning but continue with cleanup
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                f"Rule task '{rule.name}' did not respond to cancellation within 5 seconds"
+            )
+        except aio.CancelledError:
+            # Task was successfully cancelled - this is expected
+            pass
 
         # Remove from active rules
         del self._active_rules[rule.name]
@@ -223,6 +236,11 @@ class RuleHandler:
         """Run a rule repeatedly when its trigger condition becomes true."""
         try:
             while True:
+                # Check for cancellation FIRST - before making any API calls
+                current_task = aio.current_task()
+                if current_task and current_task.cancelled():
+                    break
+
                 # Wait for the condition to be true
                 event = aio.Event()
                 await self._rule_engine.add_condition(trigger, condition_event=event)

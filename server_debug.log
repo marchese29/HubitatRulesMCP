@@ -1,0 +1,10 @@
+[06/28/25 22:34:24] INFO     Starting MCP server 'Hubitat Rules'  server.py:1358
+                             with transport 'http' on                           
+                             http://127.0.0.1:8080/mcp/                         
+[INFO] - mcp.server.streamable_http_manager - StreamableHTTP session manager started
+INFO:     127.0.0.1:51884 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51886 - "GET / HTTP/1.1" 404 Not Found
+[INFO] - mcp.server.streamable_http_manager - Created new transport with session ID: 15c33780468b43728f97fc84959995e6
+INFO:     127.0.0.1:51888 - "GET /mcp/ HTTP/1.1" 406 Not Acceptable
+[INFO] - lifecycle - Server initialization complete
+[INFO] - mcp.server.streamable_http_manager - StreamableHTTP session manager shutting down

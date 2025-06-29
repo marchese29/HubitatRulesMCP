@@ -134,7 +134,7 @@ async def receive_device_event(request: Request) -> JSONResponse:
         logger.info(f"Received device event: {json.dumps(payload)}")
 
         # Create a HubitatDeviceEvent from the payload
-        device_event = HubitatDeviceEvent(**payload)
+        device_event = HubitatDeviceEvent(**payload["content"])
 
         # Define callback for when processing completes
         async def _on_processing_complete(task):
