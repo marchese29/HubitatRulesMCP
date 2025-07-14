@@ -8,8 +8,8 @@ import logging
 import time
 from typing import Any, ParamSpec, TypeVar
 
-from audit.service import get_audit_service
-from models.audit import EventSubtype, EventType
+from ..audit.service import get_audit_service
+from ..models.audit import EventSubtype, EventType
 
 logger = logging.getLogger(__name__)
 

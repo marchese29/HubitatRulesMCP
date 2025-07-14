@@ -1,7 +1,6 @@
 import asyncio
 import contextlib
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
 import json
 import logging
 import logging.config
@@ -20,30 +19,29 @@ from starlette.responses import JSONResponse, PlainTextResponse
 import uvicorn
 import yaml
 
-from audit import service as audit_service_module
-from audit.decorators import log_audit_event
-from audit.service import AuditService
-from hubitat import HubitatClient
-from logic.audit_logic import AuditLogic
-from logic.rule_logic import RuleLogic
-from logic.scene_logic import SceneLogic
-from models.api import (
+from .audit import service as audit_service_module
+from .audit.decorators import log_audit_event
+from .audit.service import AuditService
+from .hubitat import HubitatClient
+from .logic.audit_logic import AuditLogic
+from .logic.rule_logic import RuleLogic
+from .logic.scene_logic import SceneLogic
+from .models.api import (
     AuditLogQueryResponse,
     DeviceStateRequirement,
     HubitatDeviceEvent,
     PaginationInfo,
     RuleInfo,
-    RuleSummaryResponse,
     Scene,
     SceneSetResponse,
     SceneWithStatus,
 )
-from models.audit import EventSubtype, EventType
-from models.database import DBRule
-from rules.engine import RuleEngine
-from rules.handler import RuleHandler
-from scenes.manager import SceneManager
-from timing.timers import TimerService
+from .models.audit import EventSubtype, EventType
+from .models.database import DBRule
+from .rules.engine import RuleEngine
+from .rules.handler import RuleHandler
+from .scenes.manager import SceneManager
+from .timing.timers import TimerService
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 log_config_path = os.path.join(current_dir, "log_config.yaml")
@@ -230,7 +228,7 @@ async def lifespan(fastmcp: FastMCP):
 
     # Launch the web server
     lc_logger.debug("Starting webhook server")
-    config = uvicorn.Config("main:web_app", host="0.0.0.0", port=8080)
+    config = uvicorn.Config("he_rules.server:web_app", host="0.0.0.0", port=8080)
     server = uvicorn.Server(config)
     web_app_task = asyncio.create_task(server.serve())
     lc_logger.debug("Webhook server started")
@@ -649,115 +647,13 @@ if AUDIT_TOOLS_ENABLED:
                 ),
             )
 
-    @mcp.tool()
-    async def get_rule_summary(
-        ctx: Context,
-        rule_name: str | None = None,
-        start_date: str | None = None,
-        end_date: str | None = None,
-        include_successful: bool = True,
-        include_failed: bool = True,
-    ) -> RuleSummaryResponse:
-        """Get intelligent analysis of rule execution patterns using LLM sampling.
 
-        Args:
-            rule_name: Specific rule to analyze (if None, analyzes all rules)
-            start_date: Start date for analysis (ISO format, defaults to 7 days ago)
-            end_date: End date for analysis (ISO format, defaults to now)
-            include_successful: Include successful executions in analysis
-            include_failed: Include failed executions in analysis
-
-        Returns:
-            Intelligent analysis of rule execution patterns
-        """
-        # Set default date range if not provided
-        if not start_date:
-            start_dt = datetime.now() - timedelta(days=7)
-            start_date = start_dt.isoformat()
-        else:
-            start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
-
-        if not end_date:
-            end_dt = datetime.now()
-            end_date = end_dt.isoformat()
-        else:
-            end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
-
-        await ctx.info(f"Analyzing rule executions from {start_date} to {end_date}")
-
-        try:
-            # Get execution data from audit logic (this is transactional)
-            execution_data = await audit_logic.get_rule_execution_data(
-                rule_name=rule_name,
-                start_date=start_date,
-                end_date=end_date,
-                include_successful=include_successful,
-                include_failed=include_failed,
-            )
-
-            await ctx.info(
-                f"Found {execution_data.total_executions} rule executions for analysis"
-            )
-
-            if execution_data.total_executions == 0:
-                return RuleSummaryResponse(
-                    analysis="No rule executions found in the specified date range and "
-                    "criteria.",
-                    rule_name=rule_name,
-                    date_range=f"{start_date} to {end_date}",
-                    total_executions=0,
-                    successful_executions=0,
-                    failed_executions=0,
-                )
-
-            # Format the data summary (outside transaction)
-            data_summary = audit_logic.format_rule_execution_summary(
-                execution_data=execution_data,
-                rule_name=rule_name,
-                start_date=start_date,
-                end_date=end_date,
-            )
-
-            # Load prompt template from file
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            prompt_path = os.path.join(script_dir, "rule_summary_prompt.txt")
-
-            try:
-                with open(prompt_path, encoding="utf-8") as f:
-                    prompt_template = f.read()
-            except FileNotFoundError:
-                prompt_template = "Analyze these home automation rule executions and "
-                "provide insights about patterns, performance issues, error trends, and "
-                "actionable recommendations:\n\n{data_summary}"
-
-            # Request LLM analysis (outside transaction)
-            full_prompt = prompt_template.format(data_summary=data_summary)
-            analysis = await ctx.sample(full_prompt)
-
-            return RuleSummaryResponse(
-                analysis=analysis.text if hasattr(analysis, "text") else str(analysis),
-                rule_name=rule_name,
-                date_range=f"{start_date} to {end_date}",
-                total_executions=execution_data.total_executions,
-                successful_executions=execution_data.successful_executions,
-                failed_executions=execution_data.failed_executions,
-            )
-
-        except Exception as e:
-            error_msg = f"Error analyzing rule executions: {str(e)}"
-            await ctx.error(error_msg)
-            return RuleSummaryResponse(
-                analysis=f"Error during analysis: {error_msg}",
-                rule_name=rule_name,
-                date_range=f"{start_date} to {end_date}",
-                total_executions=0,
-                successful_executions=0,
-                failed_executions=0,
-            )
+def main():
+    mcp.run()
 
 
 if __name__ == "__main__":
     try:
-        mcp.run()
+        main()
     except KeyboardInterrupt:
         logger.info("\nShutdown completed gracefully.")

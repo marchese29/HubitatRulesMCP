@@ -4,9 +4,9 @@ import json
 from sqlalchemy import desc
 from sqlmodel import Session, select
 
-from models.api import AuditLogQueryResponse, PaginationInfo, RuleExecutionData
-from models.audit import AuditLog, EventType
-from util import transactional
+from ..models.api import AuditLogQueryResponse, PaginationInfo, RuleExecutionData
+from ..models.audit import AuditLog, EventType
+from ..util import transactional
 
 # Template for rule execution analysis summary
 RULE_EXECUTION_SUMMARY_TEMPLATE = """

@@ -1,11 +1,11 @@
 from sqlmodel import Session, select
 
-from audit.decorators import audit_scope
-from models.api import RuleInfo
-from models.audit import EventSubtype, EventType
-from models.database import DBRule
-from rules.handler import RuleHandler
-from util import transactional
+from ..audit.decorators import audit_scope
+from ..models.api import RuleInfo
+from ..models.audit import EventSubtype, EventType
+from ..models.database import DBRule
+from ..rules.handler import RuleHandler
+from ..util import transactional
 
 
 class RuleLogic:

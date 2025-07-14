@@ -4,9 +4,9 @@ from typing import Any
 import httpx
 from pydantic import BaseModel
 
-from audit.decorators import audit_scope
-from models.audit import EventSubtype, EventType
-from util import env_var
+from .audit.decorators import audit_scope
+from .models.audit import EventSubtype, EventType
+from .util import env_var
 
 logger = logging.getLogger(__name__)
 

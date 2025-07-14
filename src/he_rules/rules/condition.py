@@ -1,8 +1,8 @@
 from datetime import timedelta
 from typing import Any, override
 
-from models.api import HubitatDeviceEvent
-from rules.engine import EngineCondition
+from ..models.api import HubitatDeviceEvent
+from ..rules.engine import EngineCondition
 
 
 class AbstractCondition(EngineCondition):

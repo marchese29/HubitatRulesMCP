@@ -6,7 +6,7 @@ import logging
 from sqlalchemy import Engine
 from sqlmodel import Session
 
-from models.audit import AuditLog, EventSubtype, EventType
+from ..models.audit import AuditLog, EventSubtype, EventType
 
 logger = logging.getLogger(__name__)
 

@@ -2,9 +2,9 @@ import asyncio as aio
 from datetime import datetime, time, timedelta
 from typing import Any, Self
 
-from hubitat import HubitatClient, HubitatDevice
-from models.api import SceneSetResponse
-from rules.condition import (
+from ..hubitat import HubitatClient, HubitatDevice
+from ..models.api import SceneSetResponse
+from ..rules.condition import (
     AbstractCondition,
     AlwaysFalseCondition,
     AttributeChangeCondition,
@@ -13,8 +13,8 @@ from rules.condition import (
     SceneChangeCondition,
     StaticDeviceAttributeCondition,
 )
-from rules.engine import RuleEngine
-from scenes.manager import SceneManager
+from ..rules.engine import RuleEngine
+from ..scenes.manager import SceneManager
 
 
 class Attribute:
