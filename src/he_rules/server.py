@@ -43,8 +43,7 @@ from .rules.handler import RuleHandler
 from .scenes.manager import SceneManager
 from .timing.timers import TimerService
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-log_config_path = os.path.join(current_dir, "log_config.yaml")
+log_config_path = Path(__file__).resolve().parent.parent.parent / "log_config.yaml"
 with open(log_config_path) as f:
     log_config = yaml.safe_load(f.read())
 logging.config.dictConfig(log_config)
