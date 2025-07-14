@@ -17,6 +17,9 @@ dependencies = [
 [tool.uv]
 package = true
 
+[tool.setuptools.package-data]
+he_rules = ["log_config.yaml"]
+
 [project.scripts]
 hubitat-rules = "he_rules.server:main"
 

@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 from contextlib import asynccontextmanager
+from importlib import resources
 import json
 import logging
 import logging.config
@@ -43,8 +44,7 @@ from .rules.handler import RuleHandler
 from .scenes.manager import SceneManager
 from .timing.timers import TimerService
 
-log_config_path = Path(__file__).resolve().parent.parent.parent / "log_config.yaml"
-with open(log_config_path) as f:
+with resources.open_text(__package__, "log_config.yaml") as f:
     log_config = yaml.safe_load(f.read())
 logging.config.dictConfig(log_config)
 
